@@ -1,0 +1,46 @@
+# Skills harness artifacts (not part of the project)
+.agents/
+skills-lock.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Data — never commit raw textbooks or large derived artifacts
+data/raw/
+data/ocr/
+data/chunks/
+chroma/
+*.pdf
+*.faiss
+*.bin
+
+# Model weights / caches
+models/
+.cache/
+.huggingface/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
