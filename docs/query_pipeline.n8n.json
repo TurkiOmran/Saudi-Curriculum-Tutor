@@ -1,0 +1,600 @@
+{
+  "name": "Aleem — Query Pipeline (Design v1)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Aleem — Query Pipeline (Design v1)\n\nVisual design for the prompt → response workflow.\nIngestion (OCR / chunking / embedding-to-Chroma) is a separate workstream and is treated here as upstream fixture.\n\n**How to read this canvas:**\n- Yellow nodes = LLM calls (ALLaM-7B)\n- Blue nodes  = External services (Chroma, Jina embed, Jina rerank)\n- Green nodes = Logic / control flow\n- Sticky notes (this style) document contracts, prompts, retries, and refusal rules\n\n**Source of truth:** `BUILD_SPEC.md` §2, §4.3–4.8. Where this diagram and the spec disagree, the spec wins.",
+        "height": 280,
+        "width": 520,
+        "color": 6
+      },
+      "id": "sticky-title",
+      "name": "Sticky — Title & Legend",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-200, -360]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "aleem-query",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-webhook",
+      "name": "1. User Turn (Webhook)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [0, 0],
+      "notes": "Entry point. Body: { query: string, session: { grade, subject, ui_locale }, turn_id: string }"
+    },
+    {
+      "parameters": {
+        "content": "### Stage Contract — UserTurn\n```\n{\n  turn_id: string,\n  query: string,\n  session: {\n    grade: 4 | 7 | 10,\n    subject: \"arabic\" | \"islamic\" | \"social\" | \"english\" | \"math\",\n    ui_locale: \"ar\" | \"en\"\n  },\n  ts: ISO8601\n}\n```\nSession comes from Chainlit `ChatProfile`, set once at session start. No auth.",
+        "height": 280,
+        "width": 360,
+        "color": 7
+      },
+      "id": "sticky-userturn",
+      "name": "Sticky — UserTurn Contract",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-200, 60]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "a1", "name": "query", "value": "={{ $json.body.query }}", "type": "string" },
+            { "id": "a2", "name": "turn_id", "value": "={{ $json.body.turn_id }}", "type": "string" },
+            { "id": "a3", "name": "session", "value": "={{ $json.body.session }}", "type": "object" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-extract-session",
+      "name": "2. Extract Session + Query",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [240, 0],
+      "notes": "Pulls fields out of the request body for downstream use. No transformation."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://allam.local/v1/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"prompt_template\": \"DECOMPOSITION_V1\",\n  \"vars\": { \"query\": \"{{ $json.query }}\" },\n  \"output_schema\": { \"sub_requests\": [{\"text\":\"string\",\"language_hint\":\"ar|en|mixed\"}] },\n  \"max_retries_on_invalid_json\": 1\n}",
+        "options": {}
+      },
+      "id": "node-decompose",
+      "name": "3. Decomposition (ALLaM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 0],
+      "notes": "Splits compound requests into atomic sub-requests. Skip-LLM heuristic: if query < 60 chars and no coordinating conjunctions (and / و / ثم / then), bypass and emit a single sub-request directly. On JSON failure: retry once, then fall through with a single sub-request containing the raw query."
+    },
+    {
+      "parameters": {
+        "content": "### LLM Call — Decomposition\n**Model:** ALLaM-7B\n**Output:** `{ sub_requests: [{ text, language_hint }] }`\n**Retry:** 1× on invalid JSON, then fall through with single sub-request.\n**Cheap path:** skip the LLM if the query is short and has no conjunctions.",
+        "height": 220,
+        "width": 360,
+        "color": 5
+      },
+      "id": "sticky-decompose",
+      "name": "Sticky — Decomposition",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [480, 200]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": { "reset": false }
+      },
+      "id": "node-split",
+      "name": "4. For each sub-request",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [720, 0],
+      "notes": "Sequential fan-out (v1). Each iteration processes one SubRequest end-to-end. Order preserved for final merge."
+    },
+    {
+      "parameters": {
+        "content": "### Stage Contract — SubRequest\n```\n{\n  id: string,                # turn_id + suffix\n  text: string,              # atomic ask\n  parent_query: string,\n  language_hint: \"ar\" | \"en\" | \"mixed\"\n}\n```\nSequential processing in v1 (simpler streaming + logging). Revisit parallel only if measured latency hurts on N≥3 sub-requests.",
+        "height": 280,
+        "width": 360,
+        "color": 7
+      },
+      "id": "sticky-subrequest",
+      "name": "Sticky — SubRequest Contract",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [720, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://allam.local/v1/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"prompt_template\": \"INTENT_CLASSIFIER_V1\",\n  \"vars\": { \"sub_request_text\": \"{{ $json.text }}\" },\n  \"output_schema\": { \"intent\": \"qa|explain|summarize|revise|quiz|teacher_support\" }\n}",
+        "options": {}
+      },
+      "id": "node-intent",
+      "name": "5. Intent Classifier (ALLaM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [960, 0],
+      "notes": "Few-shot prompt; outputs one of {qa, explain, summarize, revise, quiz, teacher_support}. On JSON failure: default to `qa` (strictest grounding contract — safest fallback)."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://jina.local/v4/embeddings",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"jinaai/jina-embeddings-v4\",\n  \"task\": \"retrieval.query\",\n  \"input\": \"{{ $json.text }}\"\n}",
+        "options": {}
+      },
+      "id": "node-embed",
+      "name": "6. Embed Query (Jina-v4)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 0],
+      "notes": "Task mode = `retrieval.query` (NOT `retrieval.passage` — that's used at ingestion time for chunks)."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://chroma.local/api/v1/collections/grade_{{ $('2. Extract Session + Query').item.json.session.grade }}/query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"query_embeddings\": [ \"<vector from step 6>\" ],\n  \"n_results\": 20,\n  \"where\": { \"subject\": \"{{ $('2. Extract Session + Query').item.json.session.subject }}\" }\n}",
+        "options": {}
+      },
+      "id": "node-retrieve",
+      "name": "7. Chroma Retrieve (top-20)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1440, 0],
+      "notes": "Collection picked structurally by grade (`grade_4`, `grade_7`, `grade_10`). Subject filtered via metadata `where` clause. n_results = 20."
+    },
+    {
+      "parameters": {
+        "content": "### Stage Contract — Chunk\n```\n{\n  chunk_id: string,\n  text: string,\n  retrieval_score: float,\n  rerank_score: float | null,\n  metadata: {\n    grade, subject, book, chapter,\n    lesson_title, page,\n    content_type: \"lesson_body\" | \"example\"\n                | \"exercise\" | \"definition\"\n  }\n}\n```\nGrade isolation is structural (per-collection), NOT policy-based.",
+        "height": 320,
+        "width": 360,
+        "color": 7
+      },
+      "id": "sticky-chunk",
+      "name": "Sticky — Chunk Contract",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1440, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://jina.local/rerank/v3",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"jina-reranker-v3\",\n  \"query\": \"{{ $('5. Intent Classifier (ALLaM)').item.json.text }}\",\n  \"documents\": \"<top_20[].text>\",\n  \"top_n\": 5\n}",
+        "options": {}
+      },
+      "id": "node-rerank",
+      "name": "8. Rerank → top-5 (Jina v3)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1680, 0],
+      "notes": "Reranks the 20 candidates and keeps the top 5. Same Chunk shape, with rerank_score populated and sorted descending."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://allam.local/v1/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"prompt_template\": \"SELF_CHECK_V1\",\n  \"vars\": {\n    \"question\": \"{{ $('5. Intent Classifier (ALLaM)').item.json.text }}\",\n    \"excerpts\": \"<top_5 chunk texts>\"\n  },\n  \"output\": \"single_token: yes|no\"\n}",
+        "options": {}
+      },
+      "id": "node-selfcheck",
+      "name": "9. Self-Check (ALLaM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1920, 0],
+      "notes": "ALLaM is asked: 'Do these excerpts contain the answer? yes/no'. LLM-only verdict — no score threshold in v1 (per BUILD_SPEC §4.5). Top-k + rerank scores are logged for every turn so a threshold can be added later if data warrants. Parse: lowercase first token; accept yes / y / نعم. Anything else → no (safer)."
+    },
+    {
+      "parameters": {
+        "content": "### LLM Call — Self-Check\n**Model:** ALLaM-7B\n**Prompt (v1, will iterate):**\n```\nSYSTEM: You check whether textbook excerpts contain enough info to answer the question. Reply only \"yes\" or \"no\". No explanation.\n\nUSER:\nQUESTION: {sub_request.text}\nEXCERPTS:\n[1] ...\n[2] ...\n[3] ...\n[4] ...\n[5] ...\nANSWER (yes/no):\n```\n**Parse:** first token, lowercased. yes/y/نعم → yes. Anything else → no.",
+        "height": 380,
+        "width": 380,
+        "color": 5
+      },
+      "id": "sticky-selfcheck",
+      "name": "Sticky — Self-Check",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1920, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "verdict-yes",
+              "leftValue": "={{ $json.verdict }}",
+              "rightValue": "yes",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-verdict-if",
+      "name": "10. Verdict yes / no?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [2160, 0],
+      "notes": "Branches on the self-check verdict. yes → generate. no → refusal builder. Demoted-to-refusal cases (format retries exhausted) feed into the refusal path downstream."
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            { "outputKey": "qa",              "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.intent }}", "rightValue": "qa",              "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" } },
+            { "outputKey": "explain",         "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.intent }}", "rightValue": "explain",         "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" } },
+            { "outputKey": "summarize",       "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.intent }}", "rightValue": "summarize",       "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" } },
+            { "outputKey": "revise",          "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.intent }}", "rightValue": "revise",          "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" } },
+            { "outputKey": "quiz",            "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.intent }}", "rightValue": "quiz",            "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" } },
+            { "outputKey": "teacher_support", "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.intent }}", "rightValue": "teacher_support", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" } }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-route-intent",
+      "name": "11a. Route by Intent",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [2400, -240],
+      "notes": "Yes branch only. Routes to one of six mode-specific generators. All six share the same retrieval, rerank, self-check, and grounding contract — the only difference is the user prompt template."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://allam.local/v1/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"system_prompt\": \"GROUNDING_CONTRACT_V1\",\n  \"prompt_template\": \"GEN_QA_V1\",\n  \"vars\": {\n    \"grade\": \"{{ $('2. Extract Session + Query').item.json.session.grade }}\",\n    \"subject\": \"{{ $('2. Extract Session + Query').item.json.session.subject }}\",\n    \"question\": \"{{ $('5. Intent Classifier (ALLaM)').item.json.text }}\",\n    \"excerpts\": \"<top_5 with lesson + page metadata>\"\n  }\n}",
+        "options": {}
+      },
+      "id": "node-gen-qa",
+      "name": "12.qa — Generate Q&A",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2640, -540],
+      "notes": "Q&A generator. 1–4 sentences with inline [n] citations. Q&A is the SPINE — the other 5 modes are deltas on the user prompt only."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://allam.local/v1/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"system_prompt\": \"GROUNDING_CONTRACT_V1\",\n  \"prompt_template\": \"GEN_EXPLAIN_V1\",\n  \"vars\": { \"grade\": \"{{ $('2. Extract Session + Query').item.json.session.grade }}\", \"subject\": \"{{ $('2. Extract Session + Query').item.json.session.subject }}\", \"question\": \"{{ $('5. Intent Classifier (ALLaM)').item.json.text }}\", \"excerpts\": \"<top_5>\" }\n}",
+        "options": {}
+      },
+      "id": "node-gen-explain",
+      "name": "12.explain — Generate Explain",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2640, -420],
+      "notes": "DELTA from Q&A: scaffolded breakdown — one-sentence intuition, 2–4 step-up paragraphs, concrete example if EXCERPTS support one. Same grounding contract."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://allam.local/v1/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"system_prompt\": \"GROUNDING_CONTRACT_V1\",\n  \"prompt_template\": \"GEN_SUMMARIZE_V1\",\n  \"vars\": { \"grade\": \"{{ $('2. Extract Session + Query').item.json.session.grade }}\", \"subject\": \"{{ $('2. Extract Session + Query').item.json.session.subject }}\", \"question\": \"{{ $('5. Intent Classifier (ALLaM)').item.json.text }}\", \"excerpts\": \"<top_5>\" }\n}",
+        "options": {}
+      },
+      "id": "node-gen-summarize",
+      "name": "12.summarize — Generate Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2640, -300],
+      "notes": "DELTA from Q&A: 5–8 bullets, one short sentence each, [n] cited. Do NOT invent bullets unsupported by EXCERPTS."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://allam.local/v1/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"system_prompt\": \"GROUNDING_CONTRACT_V1\",\n  \"prompt_template\": \"GEN_REVISE_V1\",\n  \"vars\": { \"grade\": \"{{ $('2. Extract Session + Query').item.json.session.grade }}\", \"subject\": \"{{ $('2. Extract Session + Query').item.json.session.subject }}\", \"question\": \"{{ $('5. Intent Classifier (ALLaM)').item.json.text }}\", \"excerpts\": \"<top_5>\" }\n}",
+        "options": {}
+      },
+      "id": "node-gen-revise",
+      "name": "12.revise — Generate Revision",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2640, -180],
+      "notes": "DELTA from Q&A: structured as KEY POINTS / COMMON PITFALLS (skip if not in excerpts) / QUICK SELF-CHECK (questions, no answers)."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://allam.local/v1/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"system_prompt\": \"GROUNDING_CONTRACT_V1\",\n  \"prompt_template\": \"GEN_QUIZ_V1\",\n  \"vars\": { \"grade\": \"{{ $('2. Extract Session + Query').item.json.session.grade }}\", \"subject\": \"{{ $('2. Extract Session + Query').item.json.session.subject }}\", \"question\": \"{{ $('5. Intent Classifier (ALLaM)').item.json.text }}\", \"excerpts\": \"<top_5>\" },\n  \"output_schema\": { \"questions\": [{ \"q\": \"string\", \"answer\": \"string\", \"citation\": \"int 1..5\" }] }\n}",
+        "options": {}
+      },
+      "id": "node-gen-quiz",
+      "name": "12.quiz — Generate Quiz",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2640, -60],
+      "notes": "DELTA from Q&A: STRUCTURED OUTPUT. Strict JSON: { questions: [{ q, answer, citation: 1..5 }] }. Open question — see sticky 'Quiz Schema TBD'."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://allam.local/v1/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"system_prompt\": \"GROUNDING_CONTRACT_V1\",\n  \"prompt_template\": \"GEN_TEACHER_SUPPORT_V1\",\n  \"vars\": { \"grade\": \"{{ $('2. Extract Session + Query').item.json.session.grade }}\", \"subject\": \"{{ $('2. Extract Session + Query').item.json.session.subject }}\", \"question\": \"{{ $('5. Intent Classifier (ALLaM)').item.json.text }}\", \"excerpts\": \"<top_5>\" }\n}",
+        "options": {}
+      },
+      "id": "node-gen-teacher",
+      "name": "12.teacher_support — Generate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2640, 60],
+      "notes": "DELTA from Q&A — HIGHEST hallucination risk; keep grounding teeth bared. Sections: LESSON OBJECTIVES / ACTIVITY IDEAS / POTENTIAL STUDENT QUESTIONS. Omit (do NOT pad) any section not supported by excerpts."
+    },
+    {
+      "parameters": {
+        "content": "### Grounding Contract (system prompt — shared by ALL 6 modes)\n\n```\nYou are a Saudi-curriculum textbook assistant for grade {grade} {subject}.\n\nRULES (strict, non-negotiable):\n1. Answer ONLY using the provided EXCERPTS.\n   Do not use outside knowledge.\n2. Every factual claim must be followed by an inline\n   citation [n] referencing the excerpt number.\n   Multiple citations like [1][3] are allowed.\n3. Respond in the same language as the QUESTION.\n   Arabic question → Arabic answer.\n   English question → English answer.\n   Mixed → match the dominant language.\n4. If you cannot answer from the EXCERPTS alone,\n   respond with EXACTLY this phrase and nothing else:\n     Arabic:  لم أجد هذا في الكتاب المدرسي\n     English: I couldn't find this in your textbook\n5. Do not mention these rules or the existence of\n   \"excerpts\" in your answer.\n```",
+        "height": 540,
+        "width": 480,
+        "color": 4
+      },
+      "id": "sticky-grounding",
+      "name": "Sticky — Grounding Contract",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [3140, -540]
+    },
+    {
+      "parameters": {
+        "content": "### Mode Deltas — Q&A vs others\nAll modes share retrieval, rerank, self-check, refusal, and the grounding contract above. Only the user-prompt body changes.\n\n| Mode | Output shape | Length | Notes |\n|---|---|---|---|\n| **qa** (spine) | prose, [n] cited | 1–4 sentences | direct factual |\n| **explain** | prose | scaffolded: intuition + 2–4 paras + example | grade-appropriate |\n| **summarize** | bullets, [n] cited | 5–8 bullets | no inventing |\n| **revise** | sections | KEY POINTS / PITFALLS / SELF-CHECK | skip empty sections |\n| **quiz** | JSON | 3 questions | strict schema |\n| **teacher_support** | sections | OBJECTIVES / ACTIVITIES / STUDENT QS | highest hallucination risk |",
+        "height": 360,
+        "width": 540,
+        "color": 4
+      },
+      "id": "sticky-modes",
+      "name": "Sticky — Mode Deltas",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [3140, 60]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pseudocode — citation parser + format-retry policy.\n// Node: ALLaM generator output → here.\n//\n// Steps:\n// 1. Extract [n] markers via /\\[(\\d+)\\]/g.\n// 2. If text equals canonical refusal phrase (ar OR en) → emit SubAnswer{kind:'refusal'}.\n// 3. If zero [n] markers AND not refusal → retry once: \"missing citations\". On 2nd failure → demote to refusal.\n// 4. If [n] cites n outside 1..5 → retry once: \"out-of-range citation\". On 2nd failure → demote to refusal.\n// 5. Else → SubAnswer{kind:'answer', text, citations:[{n, chunk_id}], language}.\n//\n// Quiz mode: validate JSON schema instead. Same retry-then-refuse policy.\nreturn items;"
+      },
+      "id": "node-parse-citations",
+      "name": "13a. Parse Citations + Retry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2880, -240],
+      "notes": "Format-retry policy lives here. Max 1 retry per failure category, then demote to refusal."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pseudocode — refusal builder.\n// Triggered by: self-check verdict 'no' OR demoted from generator.\n//\n// 1. canonical_phrase ← localized per language_hint:\n//      ar / mixed → 'لم أجد هذا في الكتاب المدرسي'\n//      en         → \"I couldn't find this in your textbook\"\n// 2. related_lesson_titles ← dedup top_5[0..2].metadata.lesson_title (≤ 3 unique).\n// 3. Emit SubAnswer{ kind: 'refusal', canonical_phrase, related_lesson_titles, language }.\n//\n// No additional retrieval. Reuse already-retrieved chunks.\nreturn items;"
+      },
+      "id": "node-refusal",
+      "name": "11b. Refusal Builder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2400, 240],
+      "notes": "Refusal path. Pulls parent lesson titles from the already-retrieved top-3. No re-retrieval."
+    },
+    {
+      "parameters": {
+        "content": "### Refusal Phrases (verbatim — DO NOT translate)\n**Arabic / mixed:**\n```\nلم أجد هذا في الكتاب المدرسي\n```\n**English:**\n```\nI couldn't find this in your textbook\n```\n\n**UI block appended after the refusal phrase:**\n> **Related topics in your textbook / مواضيع ذات صلة في كتابك المدرسي:**\n> - {lesson title 1}\n> - {lesson title 2}\n> - {lesson title 3}\n\nSource: top-3 unique `metadata.lesson_title` from already-retrieved chunks. No new retrieval call.",
+        "height": 380,
+        "width": 420,
+        "color": 3
+      },
+      "id": "sticky-refusal",
+      "name": "Sticky — Refusal Phrases",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [2400, 480]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "node-merge-paths",
+      "name": "13. Merge yes / no paths",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [3120, 0],
+      "notes": "Joins the answer path (after citation parsing) and the refusal path back into one stream of SubAnswer records."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pseudocode — observability log.\n//\n// Sink: append-only JSONL at logs/queries.jsonl (sqlite later if we want queryable analytics during eval).\n//\n// One record per sub-request. Shape:\n// {\n//   ts, turn_id, sub_request_id,\n//   session: { grade, subject, ui_locale },\n//   query: { full, sub_text, language_hint },\n//   decomposition: { n_sub_requests, used_llm },\n//   intent: { label, raw_response },\n//   retrieval: { top_20_chunk_ids, top_20_scores },\n//   rerank: { top_5_chunk_ids, top_5_scores },\n//   self_check: { verdict, raw },\n//   generation: {\n//     outcome: 'answer' | 'refusal' | 'error',\n//     citation_count, citation_coverage,\n//     retries, raw_first_response, final_text\n//   },\n//   latencies_ms: { decompose, intent, embed, retrieve, rerank, self_check, generate, total }\n// }\nreturn items;"
+      },
+      "id": "node-log",
+      "name": "14. Log Sub-Request (JSONL)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3360, 0],
+      "notes": "Per-sub-request observability. Enough fields to compute Recall@5 and refusal P/R offline against the eval set without re-running. Spot prompt regressions via citation_coverage trend."
+    },
+    {
+      "parameters": {
+        "content": "### Observability — Why this shape\nLogged per sub-request, written to JSONL.\n\nEnables OFFLINE:\n- **Recall@5** — was the gold chunk in `top_5_chunk_ids`?\n- **Refusal P/R** — verdict vs ground truth on should-refuse subset.\n- **Faithfulness eyeball** — manual review of `final_text` + `citations`.\n- **Threshold tuning** — score distributions on yes vs no verdicts (data informs whether to add a score floor later).\n- **Prompt regressions** — citation_coverage trend over time.",
+        "height": 320,
+        "width": 420,
+        "color": 6
+      },
+      "id": "sticky-obs",
+      "name": "Sticky — Observability",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [3360, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pseudocode — final merge of sub-answers.\n//\n// 1. Concatenate sub_answers in original sub_request order.\n// 2. Citation numbering is LOCAL per sub-answer block:\n//    [1] in block A is unrelated to [1] in block B.\n//    UI binds source cards by (sub_request_id, n).\n// 3. Partial failure tolerated: a single refusal does NOT fail the whole turn.\n//    Render the refusal block in place, continue rendering the rest.\n//\n// Output: FinalResponse { turn_id, sub_answers: SubAnswer[] }.\nreturn items;"
+      },
+      "id": "node-final-merge",
+      "name": "15. Merge Sub-Answers (after loop)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3600, 0],
+      "notes": "Runs once after the SplitInBatches loop completes. Preserves sub_request order. Per-block citation numbering."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"turn_id\": \"{{ $json.turn_id }}\",\n  \"sub_answers\": \"<SubAnswer[]>\"\n}",
+        "options": {}
+      },
+      "id": "node-respond",
+      "name": "16. Respond to Chainlit",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [3840, 0],
+      "notes": "Final response. UI rendering (source cards, RTL, sub-answer blocks) is OUT OF SCOPE for this design pass — covered in a separate frontend doc."
+    },
+    {
+      "parameters": {
+        "content": "### Stage Contract — SubAnswer (tagged union)\n```\n# Grounded answer\n{\n  kind: \"answer\",\n  sub_request_id: string,\n  intent: \"qa\" | \"explain\" | ...,\n  text: string,                  # contains inline [n]\n  citations: [\n    { n: int, chunk_id: string }\n  ],\n  language: \"ar\" | \"en\"\n}\n\n# Refusal\n{\n  kind: \"refusal\",\n  sub_request_id: string,\n  canonical_phrase: string,\n  related_lesson_titles: string[],\n  language: \"ar\" | \"en\"\n}\n```",
+        "height": 440,
+        "width": 420,
+        "color": 7
+      },
+      "id": "sticky-subanswer",
+      "name": "Sticky — SubAnswer Contract",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [3600, 240]
+    },
+    {
+      "parameters": {
+        "content": "### Format-Retry Policy (summary)\n| Failure | Retry | After 2nd failure |\n|---|---|---|\n| Decomposition JSON invalid | 1× | Single sub-request from raw query |\n| Intent JSON invalid | 0× | Default `qa` |\n| Self-check non-yes-non-no | 0× | Treat as `no` (safer) |\n| Generator missing `[n]` | 1× | Demote to refusal |\n| Generator cites out-of-range `[n]` | 1× | Demote to refusal |\n| Quiz JSON invalid | 1× | Demote to refusal |\n\n**Principle:** at most 1 retry per failure category; never spiral. Demoting to refusal is always safe — the canonical refusal + related lessons is a usable response.",
+        "height": 360,
+        "width": 480,
+        "color": 3
+      },
+      "id": "sticky-retries",
+      "name": "Sticky — Format-Retry Policy",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [2880, 240]
+    },
+    {
+      "parameters": {
+        "content": "### Open Questions (decide before implementation)\n1. **Parallel sub-requests?** Sequential v1. Revisit if measured latency hurts on N≥3.\n2. **Quiz JSON schema** — current shape is minimal (q/answer/citation). Add difficulty? distractors for MCQ? Decide before building quiz mode.\n3. **Teacher-support cross-lesson chunks** — top_5 from one query may be too narrow for a unit-spanning prep. Acceptable for demo; flag for benchmark phase.\n4. **Citation streaming** — stream `[n]` markers live then bind cards on completion (default), or hold until full response?\n5. **Degenerate top-k** — Chroma may return fewer than 20 → fewer than 5 after rerank. Self-check prompt needs to handle variable count gracefully.\n6. **Language detection** — heuristic Arabic-script ratio (cheap) vs LLM-classified inside decomposition. Lock during impl.",
+        "height": 380,
+        "width": 520,
+        "color": 2
+      },
+      "id": "sticky-open",
+      "name": "Sticky — Open Questions",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [3840, 240]
+    }
+  ],
+  "connections": {
+    "1. User Turn (Webhook)": {
+      "main": [[{ "node": "2. Extract Session + Query", "type": "main", "index": 0 }]]
+    },
+    "2. Extract Session + Query": {
+      "main": [[{ "node": "3. Decomposition (ALLaM)", "type": "main", "index": 0 }]]
+    },
+    "3. Decomposition (ALLaM)": {
+      "main": [[{ "node": "4. For each sub-request", "type": "main", "index": 0 }]]
+    },
+    "4. For each sub-request": {
+      "main": [
+        [{ "node": "15. Merge Sub-Answers (after loop)", "type": "main", "index": 0 }],
+        [{ "node": "5. Intent Classifier (ALLaM)", "type": "main", "index": 0 }]
+      ]
+    },
+    "5. Intent Classifier (ALLaM)": {
+      "main": [[{ "node": "6. Embed Query (Jina-v4)", "type": "main", "index": 0 }]]
+    },
+    "6. Embed Query (Jina-v4)": {
+      "main": [[{ "node": "7. Chroma Retrieve (top-20)", "type": "main", "index": 0 }]]
+    },
+    "7. Chroma Retrieve (top-20)": {
+      "main": [[{ "node": "8. Rerank → top-5 (Jina v3)", "type": "main", "index": 0 }]]
+    },
+    "8. Rerank → top-5 (Jina v3)": {
+      "main": [[{ "node": "9. Self-Check (ALLaM)", "type": "main", "index": 0 }]]
+    },
+    "9. Self-Check (ALLaM)": {
+      "main": [[{ "node": "10. Verdict yes / no?", "type": "main", "index": 0 }]]
+    },
+    "10. Verdict yes / no?": {
+      "main": [
+        [{ "node": "11a. Route by Intent", "type": "main", "index": 0 }],
+        [{ "node": "11b. Refusal Builder", "type": "main", "index": 0 }]
+      ]
+    },
+    "11a. Route by Intent": {
+      "main": [
+        [{ "node": "12.qa — Generate Q&A", "type": "main", "index": 0 }],
+        [{ "node": "12.explain — Generate Explain", "type": "main", "index": 0 }],
+        [{ "node": "12.summarize — Generate Summary", "type": "main", "index": 0 }],
+        [{ "node": "12.revise — Generate Revision", "type": "main", "index": 0 }],
+        [{ "node": "12.quiz — Generate Quiz", "type": "main", "index": 0 }],
+        [{ "node": "12.teacher_support — Generate", "type": "main", "index": 0 }]
+      ]
+    },
+    "12.qa — Generate Q&A":              { "main": [[{ "node": "13a. Parse Citations + Retry", "type": "main", "index": 0 }]] },
+    "12.explain — Generate Explain":     { "main": [[{ "node": "13a. Parse Citations + Retry", "type": "main", "index": 0 }]] },
+    "12.summarize — Generate Summary":   { "main": [[{ "node": "13a. Parse Citations + Retry", "type": "main", "index": 0 }]] },
+    "12.revise — Generate Revision":     { "main": [[{ "node": "13a. Parse Citations + Retry", "type": "main", "index": 0 }]] },
+    "12.quiz — Generate Quiz":           { "main": [[{ "node": "13a. Parse Citations + Retry", "type": "main", "index": 0 }]] },
+    "12.teacher_support — Generate":     { "main": [[{ "node": "13a. Parse Citations + Retry", "type": "main", "index": 0 }]] },
+    "13a. Parse Citations + Retry": {
+      "main": [[{ "node": "13. Merge yes / no paths", "type": "main", "index": 0 }]]
+    },
+    "11b. Refusal Builder": {
+      "main": [[{ "node": "13. Merge yes / no paths", "type": "main", "index": 1 }]]
+    },
+    "13. Merge yes / no paths": {
+      "main": [[{ "node": "14. Log Sub-Request (JSONL)", "type": "main", "index": 0 }]]
+    },
+    "14. Log Sub-Request (JSONL)": {
+      "main": [[{ "node": "4. For each sub-request", "type": "main", "index": 0 }]]
+    },
+    "15. Merge Sub-Answers (after loop)": {
+      "main": [[{ "node": "16. Respond to Chainlit", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "id": "aleem-query-pipeline-v1",
+  "tags": [
+    { "name": "design", "id": "design" },
+    { "name": "aleem", "id": "aleem" }
+  ]
+}

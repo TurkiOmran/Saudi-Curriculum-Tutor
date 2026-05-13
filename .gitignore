@@ -1,6 +1,12 @@
-# Skills harness artifacts (not part of the project)
+# Skills / agent harness artifacts (not part of the project)
 .agents/
+.claude/
+.files/
 skills-lock.json
+
+# Local corpus (PDFs are already excluded via *.pdf below; this also
+# keeps stray .DS_Store and any private notes from being committed)
+Data/
 
 # Python
 __pycache__/
@@ -28,7 +34,8 @@ env/
 data/raw/
 data/ocr/
 data/chunks/
-chroma/
+chroma/*
+!chroma/README.md
 *.pdf
 *.faiss
 *.bin
@@ -37,6 +44,9 @@ chroma/
 models/
 .cache/
 .huggingface/
+
+# Chainlit auto-generated translation bundle — regenerated on first run
+src/ui/.chainlit/translations/
 
 # OS / editor
 .DS_Store
