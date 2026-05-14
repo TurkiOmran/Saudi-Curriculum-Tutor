@@ -17,6 +17,9 @@ Locked design decisions from the grilling session. Build to this; revisit only w
 ```
 User request + grade + subject (Chainlit ChatProfile selector)
   ↓
+Conversation memory: rewrite the message into a standalone question
+  using recent chat history ("quiz me on that" → "quiz me on photosynthesis")
+  ↓
 Query decomposition agent (split compound requests)
   ↓ for each sub-request:
     Intent classifier → one of {Q&A, explain, summarize, revise, quiz, teacher-support}
@@ -46,7 +49,7 @@ Merge sub-answers → Chainlit renders with expandable source cards
 | Reranker | Jina Reranker v3 | Single Jina ecosystem. Verify exact HF model ID at install time. |
 | Generator | `humain-ai/ALLaM-7B-Instruct-preview` | Quantize to 4-bit if VRAM is tight. Also used for self-check and intent classifier. |
 | UI | Chainlit | Native source elements, streaming, `ChatProfile` for grade+subject. Custom RTL Arabic CSS. |
-| Orchestration | LangChain | Per the proposal. |
+| Orchestration | LangGraph | Pipeline has a per-task loop + a self-check branch + shared state — a graph shape, not a linear LCEL chain. Same ecosystem as the proposal's LangChain. |
 
 ---
 
@@ -85,7 +88,11 @@ Merge sub-answers → Chainlit renders with expandable source cards
 - Instrument: log top-k scores + self-check verdict for every query so a threshold can be added later if data warrants.
 
 ### 4.6 Agentic Layer
+- **Conversation memory (query rewrite).** Recent chat history is kept per session. Before decomposition, one cheap LLM call rewrites the incoming message into a self-contained question using that history (e.g., "quiz me on that" → "quiz me on photosynthesis"). Everything downstream always receives a standalone question, so no other node needs history awareness.
+  - Implemented as a cuttable prefix node — if week 2 is tight, disable it and the pipeline still works on fully-specified questions.
+  - "Session" therefore means app settings (grade/subject) **plus** recent chat turns.
 - **Query decomposition agent** at the top of the pipeline. Splits compound requests (e.g., "explain X and quiz me") into atomic sub-requests. Each sub-request flows through the intent classifier + RAG independently; results merged in the final response.
+  - Always runs as a node; output is always a list of tasks — `[query]` for a single-task request, `[task1, task2]` for a compound one. A config flag can force `[query]` without an LLM call (the cut-it escape hatch for Risk #4).
 - **No retry/reformulation loop** in this iteration.
 
 ### 4.7 Intent Classifier
