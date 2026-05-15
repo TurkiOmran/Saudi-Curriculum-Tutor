@@ -12,7 +12,7 @@ Aleem is a curriculum-grounded RAG tutor over official Saudi Ministry of Educati
 | ---------------------------------------- | --------------------------------------------- |
 | Understand the project pitch / problem   | `README.md`                                   |
 | Find a **locked design decision**        | `BUILD_SPEC.md` (numbered sections §1–§10)    |
-| Find an **agentic-layer decision** (L1–L18) | `RESPONSE_WORKFLOW.md`                     |
+| Find an **agentic-layer decision** (L1–L21) | `RESPONSE_WORKFLOW.md`                     |
 | Get the repo running from a fresh clone  | `SETUP.md`                                    |
 | Work inside a subfolder                  | That folder's `README.md` (every dir has one) |
 
@@ -40,20 +40,29 @@ Aleem/
 │
 ├── src/
 │   ├── retrieval/            # ✅ scaffolded — Chroma client + Jina-v4 embedder
-│   ├── ui/                   # ✅ scaffolded — Chainlit shell (stub handler)
-│   ├── ingest/               # ⬜ not built — OCR + chunking (collaborator owns)
-│   ├── agent/                # ⬜ not built — decompose + intent classifier
-│   ├── generation/           # ⬜ not built — ALLaM + self-check + refusal
-│   └── graph/                # ⬜ not built — LangGraph orchestration (per L10)
-│                             #    Planned: state.py, client.py, nodes/, inner.py, outer.py
+│   ├── ui/                   # ✅ wired — Chainlit handler drives the outer graph
+│   ├── graph/                # ✅ built — LangGraph orchestration (per L10)
+│   │                         #    state.py, client.py, prompts.py, logging.py,
+│   │                         #    inner.py, outer.py, nodes/{rewrite,decompose,
+│   │                         #    intent,retrieve,self_check,generate,refuse,
+│   │                         #    citations}.py
+│   └── ingest/               # ⬜ not built — OCR + chunking (collaborator owns)
 │
+├── prompts/                  # ✅ Jinja2 prompt templates, one per node (L19)
 ├── chroma/                   # persisted vector store (DB files gitignored)
 ├── Data/Books/               # raw textbook PDFs (gitignored)
+├── logs/                     # daily JSONL query records (L18; gitignored)
 ├── docs/query_pipeline.n8n.json  # legacy n8n prototype — reference only
-└── scripts/                  # one-off CLI utilities (currently empty)
+└── scripts/                  # one-off CLI utilities (e.g. smoke_run.py)
 ```
 
-**What's built vs. planned:** the only working code today is `src/retrieval/` (chroma_client, embeddings, init_chroma) and `src/ui/app.py` (UI shell with stub `@cl.on_message`). Everything else listed in `src/` is planned per the task list — do **not** assume files exist; check first.
+**What's built:** `src/retrieval/` (Chroma client + Jina-v4 embedder),
+`src/graph/` (the full agentic pipeline per L1–L21), `src/ui/` (Chainlit
+handler wired via `astream_events`), `prompts/` (Jinja templates),
+`scripts/smoke_run.py` (programmatic end-to-end smoke test). The only
+remaining ⬜ is `src/ingest/` (collaborator-owned) and the swap of
+`src/graph/nodes/retrieve.py` from its hardcoded-chunks stub to the real
+Chroma+rerank impl once ingestion populates the collections.
 
 ---
 
@@ -78,7 +87,7 @@ Chainlit (src/ui/app.py)
                   → merge
 ```
 
-Orchestration is **LangGraph** (per L8), not plain LangChain. Inner + outer graphs share state via `TaskState` / `OuterState` (L9). All LLM calls go through a single swappable `LLMClient` (L3) — dev backend is OpenRouter free models, deployment is ALLaM-7B; **never call `transformers` directly from a node.**
+Orchestration is **LangGraph** (per L8), not plain LangChain. Inner + outer graphs share state via `TaskState` / `OuterState` (L9). All LLM calls go through a single swappable `LLMClient` (L3, L20) — dev backend is OpenRouter free models, deployment is ALLaM-7B; **never call `transformers` directly from a node.** Prompts are Jinja2 templates in `prompts/*.j2` (L19). The Chainlit handler subscribes to `outer_graph.astream_events(...)` for per-node `cl.Step` cards and token streaming (L21) — graph nodes never import `chainlit`.
 
 ---
 
@@ -88,7 +97,10 @@ Orchestration is **LangGraph** (per L8), not plain LangChain. Inner + outer grap
 - **Refusal is canonical.** When self-check fails, return the exact phrase `لم أجد هذا في الكتاب المدرسي` / `I couldn't find this in your textbook` + parent lesson titles of top-3 chunks. No free generation, no rephrased refusals. See `BUILD_SPEC.md §4.5` and `RESPONSE_WORKFLOW.md L1`.
 - **Citations are inline-by-the-model.** ALLaM writes `[n]` markers per claim during generation; the downstream node only **renders** them — it never invents a chunk↔number mapping. See `RESPONSE_WORKFLOW.md L5`.
 - **Config in `config.yaml`, secrets in `.env`.** Never hardcode model IDs, base URLs, or temperatures. See `RESPONSE_WORKFLOW.md L17` for the exact shape.
-- **Prompts live in `prompts/`** (one file per node), out of code. See `RESPONSE_WORKFLOW.md L10`.
+- **Prompts live in `prompts/*.j2`** (one Jinja2 file per node), out of code. See `RESPONSE_WORKFLOW.md` L10, L19.
+- **LLM errors retry transient, surface persistent** at the `LLMClient` boundary — 3 tries with exponential jitter for connection/timeout/5xx/rate-limit; 4xx and exhausted retries bubble to the Chainlit handler. See `RESPONSE_WORKFLOW.md L20`.
+- **Chainlit ↔ graph wiring is via `astream_events`** — nodes stay pure (no `cl.*` imports). The handler is the only seam. See `RESPONSE_WORKFLOW.md L21`.
+- **Every query writes a JSONL record + stdout line** via `src/graph/logging.py` (L18). `logs/` is gitignored.
 - **The `agentic-pipeline` branch is where the query-path work happens.** `main` holds only the scaffold + spec.
 
 ---
@@ -104,10 +116,18 @@ uv sync
 # (Re)create the empty Chroma collections — idempotent.
 uv run python -m src.retrieval.init_chroma
 
-# Launch the Chainlit UI shell.
+# Launch the Chainlit UI (now wired to the LangGraph outer pipeline).
 # Must `cd src/ui` because Chainlit reads chainlit.md, .chainlit/, public/ from CWD.
-# PYTHONPATH=../.. keeps `from src.retrieval...` imports resolvable.
+# PYTHONPATH=../.. keeps `from src...` imports resolvable.
 (cd src/ui && PYTHONPATH=../.. uv run chainlit run app.py)
+
+# Run the agentic pipeline end-to-end without the UI. With
+# `llm.backend: fake` in config.yaml this needs no API key (Phase A
+# milestone). Flip to `openrouter` + set OPENROUTER_API_KEY for real calls.
+uv run python scripts/smoke_run.py "what is photosynthesis?"
+
+# Tail today's query log (JSONL per L18). One line per query.
+tail -f "logs/queries-$(date +%F).jsonl"
 
 # Inspect Chroma counts from the CLI.
 uv run python -c "from src.retrieval.chroma_client import get_collection; \
@@ -128,9 +148,10 @@ There is **no test suite, no linter, no formatter configured yet.** Don't fabric
 ## Working with this repo
 
 - **Read `BUILD_SPEC.md` + `RESPONSE_WORKFLOW.md` before proposing any architectural change.** The decisions in those docs are the output of grilling sessions; revisiting one requires a new grilling round, not an off-the-cuff suggestion.
-- **Don't move code into `src/agent/` or `src/generation/`.** Per `RESPONSE_WORKFLOW.md L10`, all new query-path code goes into `src/graph/` (state, client, nodes, inner, outer). The `agent/` and `generation/` folders listed in the old README are superseded.
-- **The Chroma collections are empty.** Until the ingestion half is built, `retrieve()` should be stubbed with hardcoded chunks so the agentic pipeline can be developed end-to-end. See `RESPONSE_WORKFLOW.md L2`.
-- **Cuttable features** (per `BUILD_SPEC.md §8` Risk #4): history rewrite (L7), decomposition (L4). Both must be wireable to a no-op via `config.yaml` feature flags — don't build them in a way that can't be turned off.
+- **All query-path code lives in `src/graph/`** (state, client, prompts, logging, nodes, inner, outer). Do not move it to `src/agent/` or `src/generation/` — those folders were superseded by L10.
+- **The Chroma collections are empty.** `src/graph/nodes/retrieve.py` currently returns hardcoded chunks per L2 — when the ingestion half lands, this is a single-file swap; the metadata schema in `src/retrieval/chroma_client.py:8-18` is the contract.
+- **Cuttable features** (per `BUILD_SPEC.md §8` Risk #4): history rewrite (L7), decomposition (L4). Both already respect a `config.yaml` `features.*_enabled` flag and short-circuit to the no-LLM path when off — don't remove that.
+- **Every new node wears `@timed("name")`** from `src/graph/logging.py` so its latency surfaces in the L18 record. Decorator merges debug fields, so it's safe to combine with explicit `state.debug` updates inside the node.
 
 ---
 

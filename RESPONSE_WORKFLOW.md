@@ -326,11 +326,56 @@ data warrants") and the §6.3 benchmark phase.
 
 ---
 
-## Open questions / still to grill
+### L19 — Prompt templates use Jinja2, one file per node
+Prompts live in `prompts/*.j2` (per L10, out of code). Jinja gives real
+templating (`{% for chunk in chunks %}[{{ loop.index }}] ...{% endfor %}`)
+which is the natural fit for L5's pre-numbered chunk block in the generate
+prompt. Files are pure text — non-coders can iterate on prompts without
+touching Python.
 
-- Prompt file format (jinja templates vs raw `.txt` vs Python strings)
-- OpenRouter / Ollama error handling at the API boundary
-- How Chainlit `app.py` wires the outer graph (sync/async, where streaming hooks in)
+Considered: `.txt + str.format` (forces pre-rendering the chunk list in
+Python, so the prompt file no longer tells the whole story) and Python
+string constants (clutters modules, breaks L10).
+
+Convention: templates use `\n---\n` on its own line to separate the system
+prompt from the user message; `src/graph/prompts.render_pair(name, ...)`
+splits on it and returns a `(system, user)` tuple. Adds `jinja2` to
+`pyproject.toml` (already a transitive of `chainlit`).
+
+---
+
+### L20 — LLMClient retries transient errors, surfaces persistent ones
+The `LLMClient.complete()` boundary (L3) is wrapped with `tenacity` via
+LangChain's idiomatic `Runnable.with_retry(...)`:
+`stop_after_attempt=3`, `wait_exponential_jitter=True`,
+`retry_if_exception_type` for the transient OpenAI classes
+(`APIConnectionError`, `APITimeoutError`, `InternalServerError`,
+`RateLimitError`). 4xx (auth / quota / bad request) and exhausted retries
+raise — caught at the Chainlit `@cl.on_message` handler and rendered as a
+visible error card.
+
+One failure-handling pattern at one boundary keeps nodes pure. Real
+failures surface in the L18 JSONL log instead of hiding behind per-node
+fallbacks (which would make silent degradation indistinguishable from a
+successful run — the worst interpretability bug).
+
+---
+
+### L21 — Chainlit wires the outer graph via async + `astream_events`
+`@cl.on_message` stays async (Chainlit-native) and invokes the compiled
+outer graph with `outer_graph.astream_events(state, version="v2")`.
+LangGraph emits a structured event per node start/end → mapped to
+`cl.Step` cards in the handler (one per `app.NODE_LABELS` key). Token
+streaming for the generate node flows through the same event stream
+(`on_chat_model_stream`, filtered by `metadata.langgraph_node == "generate"`).
+Final state is captured from the root chain's `on_chain_end` and used to
+render `cl.Text` citation cards.
+
+Nodes themselves stay pure (no `cl.*` calls inside graph code) — the same
+graph runs identically in `scripts/smoke_run.py`, in tests, and in any
+future non-UI caller. This is the wiring that makes L11 ("stream the
+pipeline, not just the final answer") work — the agentic stages become
+visible to the demo grader without coupling the graph to the UI layer.
 
 ---
 
@@ -339,5 +384,5 @@ data warrants") and the §6.3 benchmark phase.
 - [x] Refusal path — RESOLVED (L1)
 - [x] Citations as post-gen step → RESOLVED (L5): inline `[n]` during generation, downstream only renders
 - [x] "Merge sub-answers" missing from diagram → RESOLVED (L9): outer graph merge node
-- [ ] Query-language detection / "respond in user's query language" — handled inside generate prompt; not a separate node
+- [x] Query-language detection / "respond in user's query language" → RESOLVED (L16): language detected by L7 rewrite via structured output; regex fallback when L7 cut
 - [x] Format retries → RESOLVED (L5): live in the citations-resolve node

@@ -58,14 +58,14 @@ print(result["answer"], len(result["citations"]))
   canonical phrase + parent lesson titles of the top-3 chunks. No free
   generation.
 
-## Phase status (build order per the plan)
+## Phase status (build order per the original plan)
 
-- ✅ **Phase A** — scaffold + stubs, graph runs end-to-end without an API key.
-- ⬜ Phase B — real OpenRouter LLM client with tenacity retry (L20).
-- ⬜ Phase C — real node implementations (intent, self-check, generate, decompose).
-- ⬜ Phase D — Chainlit wiring via `astream_events` (L21).
-- ⬜ Phase E — L7 history rewrite node (cuttable).
-- ⬜ Phase F — L18 JSONL logging.
+- ✅ **Phase A** — scaffold + stubs; graph runs end-to-end without an API key.
+- ✅ **Phase B** — OpenRouter LLM client with `Runnable.with_retry` per L20.
+- ✅ **Phase C** — real node impls behind a `backend=fake` fallback (intent / self_check / generate / decompose).
+- ✅ **Phase D** — Chainlit wired via `astream_events` per L21.
+- ✅ **Phase E** — L7 history rewrite + L16 language detection.
+- ✅ **Phase F** — L18 JSONL + stdout logging via `@timed` + `log_query`.
 
 ## Not here
 
