@@ -47,13 +47,26 @@ Jina reranker → top-5. Collaborator's scope stays at ingestion only. Build aga
 
 ---
 
-## Project state (explored 2026-05-15)
+## Project state (snapshot 2026-05-15)
 
-Exists: `src/retrieval/` (chroma_client, embeddings — Jina-v4, init_chroma),
-`src/ui/app.py` (Chainlit shell, not wired). Chroma collections created but **empty**.
+Exists and **built**:
+- `src/retrieval/` — chroma_client, Jina-v4 embeddings, init_chroma.
+- `src/ui/app.py` — Chainlit wired to `outer_graph.astream_events` per L21.
+- `src/graph/` — full LangGraph pipeline (state, client, prompts, logging,
+  inner, outer + 9 nodes: rewrite, decompose, intent, retrieve, self_check,
+  generate, refuse, citations, chat).
+- `prompts/*.j2` — 6 Jinja templates (one per LLM-using node).
+- `config.yaml` — backend selector + feature flags per L17.
+- `scripts/smoke_run.py` — CLI smoke test, no API key needed in `backend: fake`.
+- `tests/` — pytest suite (61 tests, one per locked decision; backend forced
+  to `fake` by autouse fixture).
+- `logs/queries-YYYY-MM-DD.jsonl` — written per-query by L18 logging.
 
-Missing — all of Turki's scope: query-time retrieve+rerank, ALLaM wrapper,
-decomposition, intent classifier, self-check, generation, citations.
+Stubbed (waiting on collaborator scope or follow-up):
+- `src/graph/nodes/retrieve.py` returns 3 hardcoded photosynthesis chunks per
+  L2 until ingestion populates Chroma. Metadata schema matches
+  `src/retrieval/chroma_client.py:8-18` so the swap is a single-file change.
+- `src/ingest/` — OCR + chunking, collaborator-owned, not yet built.
 
 ---
 
@@ -171,14 +184,19 @@ to the demo grader (decomposition, retrieval, self-check all on screen).
 ---
 
 ### L12 — `teacher-support` intent dropped
-Five intents only: Q&A, explain, summarize, revise, quiz. `teacher-support`
+Five educational intents: Q&A, explain, summarize, revise, quiz. `teacher-support`
 removed from BUILD_SPEC §2 and §4.7 — no defined behavior, no eval coverage,
 no available content source for pedagogical advice that wouldn't break grounding.
 Logged in spec as post-demo roadmap.
 
 Affects:
-- `TaskState.intent` literal type → 5 values, not 6.
+- `TaskState.intent` literal type → 5 values for educational paths.
 - Intent classifier prompt → 5 categories (smaller, more reliable).
+
+> **Updated by L22**: a 6th intent `chat` was later added for non-curriculum
+> conversational messages (greetings, small talk, meta-questions). It does
+> NOT participate in the grounding contract — it routes around retrieve and
+> self_check entirely. See L22.
 
 ---
 
@@ -376,6 +394,53 @@ graph runs identically in `scripts/smoke_run.py`, in tests, and in any
 future non-UI caller. This is the wiring that makes L11 ("stream the
 pipeline, not just the final answer") work — the agentic stages become
 visible to the demo grader without coupling the graph to the UI layer.
+
+> **Iterated 2026-05-15**: the per-node `cl.Step` cards proved cluttered
+> in the live demo. Replaced with a single ephemeral `cl.Message` whose
+> content updates on each node start and is removed once the answer is
+> rendered (ChatGPT / Claude.ai pattern). Same `astream_events` plumbing;
+> only the rendering primitive changed. The full per-node trace lives in
+> the L18 JSONL log.
+
+---
+
+### L22 — `chat` intent for non-curriculum messages
+A 6th intent `chat` covers greetings, thanks, small talk, meta-questions
+("what did I just ask?"), and "what can you do?" type asks. L1's strict
+refusal makes sense for textbook questions but felt cold for everyday
+conversation. L22 evolves L12 (which dropped `teacher-support` for being
+ungroundable) — `chat` is groundable through a different mechanism: a
+bounded prompt that forbids factual answers and always redirects to the
+textbook.
+
+Pipeline shape (inner graph):
+
+```
+intent  ──┬── chat → chat_node → END                ←  L22
+          └── retrieve → self_check → (generate | refuse) → citations
+                                                       ↑ L1 (refusal) governs this branch only
+```
+
+Implementation:
+- `state.py`: `Intent` literal gains `"chat"` (now 6 values).
+- `prompts/chat.j2`: must NOT answer factual questions, must stay in the
+  student's language, ≤2 sentences, no `[n]` markers, end with a textbook
+  invite.
+- `nodes/chat.py`: streams via `llm.astream()` (same token-event hook
+  the Chainlit handler uses for `generate`). Bypasses retrieve / self_check
+  / citations entirely.
+- `nodes/intent.py`: structured-output classifier extended to 6 values
+  plus a `_looks_like_chat` heuristic (English word-boundary regex +
+  Arabic substring) used **only** as fallback when the LLM classifier
+  returns malformed tool-call output (the Llama-3.3-70B/vLLM hiccup we
+  saw in live testing).
+- `TaskState.history`: new field so `chat_node` can reference recent turns
+  ("you just said hi"). L7's "downstream nodes see only the standalone
+  question" contract still holds — educational nodes ignore `history`.
+
+The grounding contract from L1 is **untouched** for educational intents.
+Hallucination risk for the chat path is bounded by the prompt: no facts,
+only social glue.
 
 ---
 

@@ -2,11 +2,15 @@
 
 How to get Aleem running on your machine from a fresh clone.
 
-> **Current build status:** UI shell + empty Chroma collections.
-> The retrieval, reranking, and generation layers are not wired in yet —
-> see `BUILD_SPEC.md §10` for the task list. Once you've finished setup,
-> the Chainlit UI will boot, capture your `(grade, subject)` selection,
-> and reply with a placeholder confirming the captured state.
+> **Current build status:** The full agentic pipeline is **built and
+> tested** — rewrite → decompose → intent → retrieve → self-check →
+> (generate | refuse | chat) → citations → merge, all wired through
+> Chainlit with per-node streaming and JSONL query logging.
+> The only stub left is `retrieve()` — it returns 3 hardcoded
+> photosynthesis chunks (per L2) until the ingestion half lands. So
+> with `backend: fake` the whole graph runs end-to-end with **no API
+> key**; with `backend: openrouter` you get real Llama-3.3-70B answers
+> grounded in those 3 stub chunks.
 
 ---
 
@@ -17,37 +21,30 @@ How to get Aleem running on your machine from a fresh clone.
 | **Python**       | **3.11** exactly (pinned in `.python-version`). 3.12+ is *not* tested.     |
 | **uv**           | Recommended package manager. Resolves + installs the full dep tree in seconds. |
 | **git**          | Any recent version.                                                        |
-| **HuggingFace**  | An account + access token. Required *later* (when ingestion runs Jina-v4); not needed to launch the shell. |
-| **GPU**          | Optional. The shell runs fine on CPU. Embedding + generation phases (coming later) will benefit from a GPU. |
-| **Disk**         | ~5 GB free — most of that is `torch` + model caches once you embed.        |
+| **OpenRouter**   | Optional. Needed only for real LLM answers — see §5. `backend: fake` works without it. |
+| **HuggingFace**  | Optional. Needed only when the (collaborator-owned) ingestion pipeline runs Jina-v4. The agentic pipeline never touches HF. |
+| **GPU**          | Optional. Everything in this branch runs on CPU. ALLaM-7B local deployment will benefit from a GPU; OpenRouter offloads that. |
+| **Disk**         | ~5 GB free — torch + model caches dominate once HF downloads land.         |
 
 ### Install uv
 
-**macOS (Homebrew):**
 ```bash
+# macOS (Homebrew)
 brew install uv
-```
 
-**macOS / Linux (one-line installer):**
-```bash
+# macOS / Linux (one-line installer)
 curl -LsSf https://astral.sh/uv/install.sh | sh
-```
 
-**Windows (PowerShell):**
-```powershell
+# Windows (PowerShell)
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Verify
+uv --version       # uv 0.11.x or newer
 ```
 
-Verify:
-```bash
-uv --version
-# uv 0.11.x or newer
-```
-
-> uv manages the Python interpreter for you — you do not need to install
-> Python 3.11 separately. `uv sync` (next step) will download CPython 3.11
-> automatically if it's missing, matching the version pinned in
-> `.python-version`.
+> uv manages the Python interpreter for you — you do **not** need to
+> install Python 3.11 separately. `uv sync` (§3) downloads CPython 3.11
+> if it's missing, matching `.python-version`.
 
 ---
 
@@ -58,46 +55,33 @@ git clone <repo-url> Aleem
 cd Aleem
 ```
 
-That's the whole step. `uv` handles the venv in the next step — you don't
-need to create one manually.
+That's the whole step. `uv` handles the venv in §3.
 
 ---
 
 ## 3. Install dependencies
 
 All deps are locked in `uv.lock` (committed) with exact versions and wheel
-hashes. `uv sync` reads the lock file and installs into a project-local
-`.venv/` directory, producing a byte-identical environment for everyone on
-the team and for CI/Docker.
+hashes. `uv sync` installs into a project-local `.venv/`, producing a
+byte-identical environment for everyone on the team and CI.
 
 ```bash
-uv sync
+uv sync                     # runtime + dev deps (pytest, ruff)
 ```
 
-First run takes a couple of minutes (torch is the heavy item) and creates
-`.venv/` at the repo root. Subsequent runs are near-instant.
-
-> **Why `transformers==4.57.6` and not 5.x?** Jina-v4's `trust_remote_code`
-> model loader was written against the 4.x API and isn't yet verified on 5.x.
-> See the comment block at the top of `pyproject.toml`.
+First run takes ~2 min (torch is the heavy item). Subsequent runs are
+near-instant.
 
 ### Pip fallback (no uv)
 
-If you really cannot install uv (e.g. a locked-down CI image), there is a
-pip-compatible `requirements.txt` checked in. It is **auto-generated from
-`uv.lock`** — do not hand-edit it. Use:
-
 ```bash
 python3.11 -m venv .venv
-source .venv/bin/activate           # macOS / Linux
-# .venv\Scripts\activate            # Windows
-pip install --upgrade pip
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-This installs the same closure but without lock-file hash verification
-and at roughly pip's normal speed. To regenerate `requirements.txt` after
-a dep bump:
+`requirements.txt` is auto-generated from `uv.lock` — do not hand-edit.
+To regenerate after a dep bump:
 
 ```bash
 uv export --format requirements-txt --no-hashes --no-emit-project \
@@ -108,161 +92,249 @@ uv export --format requirements-txt --no-hashes --no-emit-project \
 
 ## 4. Configure environment variables
 
-Copy the template and fill it in:
-
 ```bash
 cp .env.example .env
 ```
 
-Open `.env` and set:
+Open `.env` and set whichever keys you need. All are optional for the
+default `backend: fake` flow:
 
-| Var          | Required?            | What it does                                                              |
-| ------------ | -------------------- | ------------------------------------------------------------------------- |
-| `HF_TOKEN`   | Only for ingestion   | Used by `transformers` to download `jinaai/jina-embeddings-v4` (a gated model — accept the license on its HF page first). Get a token at <https://huggingface.co/settings/tokens>. |
-| `CHROMA_DIR` | No (defaults to `./chroma`) | Override where Chroma persists its SQLite + parquet files.        |
-
-For now (UI shell only), you can leave `HF_TOKEN` blank — the shell never
-loads Jina-v4. You'll need it when ingestion is wired up.
+| Var                  | When required                              | What it does                                                          |
+| -------------------- | ------------------------------------------ | --------------------------------------------------------------------- |
+| `OPENROUTER_API_KEY` | Only when `llm.backend: openrouter`        | Real LLM calls. Get a key at <https://openrouter.ai/keys>.            |
+| `HF_TOKEN`           | Only for (future) ingestion via Jina-v4    | The model is gated — accept the license on its HF page first.         |
+| `CHROMA_DIR`         | No (defaults to `./chroma`)                | Override where Chroma persists its SQLite + parquet files.            |
 
 ---
 
-## 5. Initialise the Chroma collections
+## 5. Choose your LLM backend (`config.yaml`)
 
-This creates three empty persistent collections — one per grade — with the
-Jina-v4 embedding function pre-attached.
+`config.yaml` lives at the repo root. The shape is locked in
+`RESPONSE_WORKFLOW.md` L17.
+
+```yaml
+llm:
+  backend: fake          # fake | openrouter | ollama (one at a time)
+
+  openrouter:
+    model: meta-llama/llama-3.3-70b-instruct
+    base_url: https://openrouter.ai/api/v1
+    # api key read from OPENROUTER_API_KEY in .env
+```
+
+### `backend: fake`  *(default, no API key needed)*
+
+Every LLM node short-circuits to a canned reply. The graph still runs
+end-to-end — you'll see the streaming `cl.Step` cascade, citations, the
+JSONL log line, etc. Great for UI work, demos, and the test suite.
+
+### `backend: openrouter` *(real LLM)*
+
+1. Add `OPENROUTER_API_KEY=…` to `.env`.
+2. Flip `backend: openrouter` in `config.yaml`.
+3. About the model:
+   - `meta-llama/llama-3.3-70b-instruct` (no `:free`) → paid route,
+     ~$0.001/query. Reliable, doesn't 429. **Recommended.**
+   - `meta-llama/llama-3.3-70b-instruct:free` → free route via 3rd-party
+     upstream provider; heavily rate-limited. Expect HTTP 429 retries on
+     bursty pipelines like Aleem (5 LLM calls per query).
+   - Smaller free models (`nvidia/nemotron-nano-9b-v2:free`,
+     `openai/gpt-oss-20b:free`) are less throttled but weaker at
+     structured output.
+4. The model **must** support tool-calling (L13). Verify against the live
+   list at <https://openrouter.ai/api/v1/models> — the free roster rotates.
+
+### `backend: ollama`
+
+Placeholder slot in `config.yaml`. The factory raises `NotImplementedError`
+until a local target is decided.
+
+---
+
+## 6. Initialise the Chroma collections
+
+The agentic pipeline doesn't read from Chroma yet (retrieve is stubbed),
+but the collections need to exist so the rest of the stack imports cleanly.
 
 ```bash
 uv run python -m src.retrieval.init_chroma
 ```
 
-> `uv run` runs a command inside the project's `.venv` without you having
-> to `source .venv/bin/activate` first. If you prefer the traditional
-> flow, activate the venv and drop the `uv run` prefix.
-
 Expected output:
 ```
-HH:MM:SS  INFO     chroma dir: /…/Aleem/chroma
-HH:MM:SS  INFO     grade_4    created  (count=0)
-HH:MM:SS  INFO     grade_7    created  (count=0)
-HH:MM:SS  INFO     grade_10   created  (count=0)
-HH:MM:SS  INFO     done — 3 collections ready
+HH:MM:SS  INFO  chroma dir: /…/Aleem/chroma
+HH:MM:SS  INFO  grade_4   created  (count=0)
+HH:MM:SS  INFO  grade_7   created  (count=0)
+HH:MM:SS  INFO  grade_10  created  (count=0)
+HH:MM:SS  INFO  done — 3 collections ready
 ```
 
-Re-running is safe (idempotent) — existing collections are reported as
-`exists` instead of `created`.
-
-Confirm the persisted database:
-```bash
-ls chroma/
-# README.md  chroma.sqlite3  <uuid-dirs>/
-```
+Idempotent — safe to re-run.
 
 ---
 
-## 6. Run the Chainlit UI
+## 7. Verify the install
 
-Chainlit reads its config (`.chainlit/config.toml`), welcome screen
-(`chainlit.md`), and static assets (`public/`) from the current working
-directory, so we run it from inside `src/ui/`. `PYTHONPATH=../..` keeps
-imports of `src.retrieval...` resolvable when the pipeline lands.
+Two fast checks, no browser needed:
+
+```bash
+# (a) Run the pipeline end-to-end with the fake backend — no network.
+uv run python scripts/smoke_run.py "what is photosynthesis?"
+
+# (b) Run the test suite (~1.5s, 61 tests, all fake-backend).
+uv run pytest
+
+# (c) Lint check.
+uv run ruff check src/ tests/ scripts/
+```
+
+Both `pytest` and `ruff check` should report green. The smoke run prints
+the canned stub answer plus the per-task debug dict. With `backend:
+openrouter` the smoke run prints a real grounded answer.
+
+---
+
+## 8. Run the Chainlit UI
 
 ```bash
 cd src/ui
 PYTHONPATH=../.. uv run chainlit run app.py
 ```
 
-Open <http://localhost:8000> in your browser. You should see three grade
-cards: **Grade 4 / Grade 7 / Grade 10**.
+Open <http://localhost:8000>. Pick a grade card, then optionally change
+subject in the ⚙ settings panel, then ask any question.
 
-### What works today
+### What you see per query
 
-1. Pick a grade → opens a chat scoped to that grade.
-2. Click the settings gear (⚙) → pick a subject from the dropdown.
-3. Send any message → reply confirms the captured `(grade, subject)` state.
+- A single status line at the top of the answer (e.g. `⏳ Detecting
+  intent…`) that **updates in place** as each node runs and **disappears**
+  once the final answer renders (ChatGPT / Claude.ai pattern, per L21).
+- Real answers stream token-by-token from the generate / chat nodes.
+- Citation cards (`[1]`, `[2]`, …) expand to show the source chunk's
+  text, lesson title, and page.
+- Off-textbook questions hit the L1 refusal path:
+  `I couldn't find this in your textbook` / `لم أجد هذا في الكتاب المدرسي`
+  plus the top-3 related lesson titles.
+- Greetings / small talk / meta-questions hit the L22 chat path: friendly
+  bounded reply, no citations, no factual content.
 
-### What's stubbed
+### What you don't see
 
-`@cl.on_message` returns a placeholder. Once `src/ingest/`, real
-retrieval, Jina Reranker v3, and ALLaM-7B are wired in, the same handler
-will route through the full pipeline — the `(grade, subject)` captured
-here already feed into the future Chroma query (see `src/ui/README.md`).
-
----
-
-## 7. Useful commands cheat-sheet
+Per-node `cl.Step` cards are deliberately gone (replaced by the single
+updating status line per L21 iteration). The full per-node trace lives
+in `logs/queries-$(date +%F).jsonl` — tail it in a separate terminal:
 
 ```bash
-# install / sync deps from the lock file
-uv sync
-
-# add a new dependency (updates pyproject.toml + uv.lock)
-uv add <package>
-
-# regenerate requirements.txt from uv.lock (for pip fallback)
-uv export --format requirements-txt --no-hashes --no-emit-project \
-  --output-file requirements.txt
-
-# (re)initialise Chroma — idempotent
-uv run python -m src.retrieval.init_chroma
-
-# inspect the persisted collections from the CLI
-uv run python -c "from src.retrieval.chroma_client import get_collection; \
-                  print({n: get_collection(n).count() for n in (4, 7, 10)})"
-
-# launch the UI
-(cd src/ui && PYTHONPATH=../.. uv run chainlit run app.py)
-
-# launch on a custom port
-(cd src/ui && PYTHONPATH=../.. uv run chainlit run app.py --port 8765)
+tail -f logs/queries-$(date +%F).jsonl
 ```
 
 ---
 
-## 8. Troubleshooting
+## 9. Useful commands cheat-sheet
 
-**`chainlit: command not found`**
-You forgot the `uv run` prefix, or you didn't activate the venv. Either
-run `uv run chainlit run app.py` or do `source .venv/bin/activate` first.
+```bash
+# Install / sync deps
+uv sync
 
-**`ModuleNotFoundError: No module named 'src'`**
-You forgot `PYTHONPATH=../..` when running Chainlit from `src/ui/`, or
-you're not at the repo root when running `uv run python -m src.retrieval.init_chroma`.
+# Add a dep (updates pyproject.toml + uv.lock)
+uv add <package>
 
-**`uv: command not found`**
-uv isn't on your PATH. Re-run the installer (see §1) or restart your
-shell. The Homebrew install puts it in `/opt/homebrew/bin/`; the
-one-line installer puts it in `~/.local/bin/`.
+# Regenerate requirements.txt
+uv export --format requirements-txt --no-hashes --no-emit-project \
+  --output-file requirements.txt
 
-**Chainlit creates a stray `chainlit.md` at the repo root**
-You launched Chainlit from the repo root instead of from `src/ui/`.
-Stop the server (`Ctrl-C`), delete the auto-generated `chainlit.md`
-and `.chainlit/` at the repo root, then `cd src/ui` before launching.
+# (Re)initialise Chroma
+uv run python -m src.retrieval.init_chroma
 
-**Chroma errors mentioning a missing embedding function on `get_collection`**
-The embedding function must be supplied every time you open a
-collection — that's what `src/retrieval/chroma_client.get_collection()`
-does for you. Don't call `client.get_collection(...)` directly; use the
-helper.
+# Smoke-run the pipeline (no UI)
+uv run python scripts/smoke_run.py "your question here"
 
-**`pip install` fails on `torch`**
-On Apple Silicon, `torch==2.7.1` should resolve to a universal wheel. On
-older Linux, you may need to add `--extra-index-url https://download.pytorch.org/whl/cpu`
-to force the CPU build.
+# Tests
+uv run pytest                                        # full suite
+uv run pytest tests/test_intent.py                   # one file
+uv run pytest -vv -s                                 # verbose
 
-**HuggingFace 401 / 403 when downloading Jina-v4** *(later, when ingestion runs)*
-You haven't accepted the model license. Visit
-<https://huggingface.co/jinaai/jina-embeddings-v4>, click *Agree*, and
-make sure `HF_TOKEN` in your `.env` belongs to the same account.
+# Lint / format
+uv run ruff check src/ tests/ scripts/
+uv run ruff check --fix src/ tests/ scripts/
+uv run ruff format src/ tests/ scripts/
+
+# Launch the Chainlit UI
+(cd src/ui && PYTHONPATH=../.. uv run chainlit run app.py)
+(cd src/ui && PYTHONPATH=../.. uv run chainlit run app.py --port 8765)
+
+# Tail today's query log
+tail -f logs/queries-$(date +%F).jsonl
+```
 
 ---
 
-## 9. Where to go next
+## 10. Troubleshooting
+
+**`chainlit: command not found`**
+Forgot `uv run`, or didn't activate the venv. Either run
+`uv run chainlit run app.py` or do `source .venv/bin/activate` first.
+
+**`ModuleNotFoundError: No module named 'src'`**
+Forgot `PYTHONPATH=../..` when running Chainlit from `src/ui/`, or you're
+not at the repo root when running `uv run python -m src.retrieval.init_chroma`.
+
+**`uv: command not found`**
+uv isn't on PATH. Re-run the installer (§1) or restart your shell.
+
+**Chainlit drops a stray `chainlit.md` or `.chainlit/` at the repo root**
+You launched Chainlit from the repo root instead of from `src/ui/`. Stop
+the server, delete the stray files at root, then `cd src/ui` before
+launching. `.gitignore` already excludes the repo-root `.chainlit/`.
+
+**HTTP 429 / "rate-limited upstream" from OpenRouter**
+You're on a `:free` model and the third-party upstream provider is
+throttling. Two fixes:
+- Switch to the paid route (drop `:free` from the model id; costs
+  ~$0.001/query and stops the throttling). Requires credits on your
+  OpenRouter account — `is_free_tier: false` on `/api/v1/auth/key`.
+- Switch to a smaller / less-popular free model
+  (`nvidia/nemotron-nano-9b-v2:free`, `openai/gpt-oss-20b:free`).
+
+**HTTP 404 / "No endpoints found for `<model>:free`"**
+That free endpoint was retired. Refresh the model id against
+<https://openrouter.ai/api/v1/models> and pick a currently-live one.
+
+**`Structured Output response does not have a 'parsed' field`** *(pipeline error in Chainlit)*
+A provider hiccup — the LLM returned an empty `tool_calls=[]` instead of
+a parsed schema. The pipeline now catches this per L20 and falls back
+to safe defaults (intent → qa or chat-heuristic; self_check → refuse).
+If you still see the error card, re-launch Chainlit so the latest code
+is loaded.
+
+**Chroma "missing embedding function on `get_collection`"**
+Don't call `client.get_collection(...)` directly. Use
+`src.retrieval.chroma_client.get_collection(grade)` — it re-attaches Jina-v4
+each open, which Chroma can't persist.
+
+**`pip install` fails on `torch`**
+On Apple Silicon, `torch==2.7.1` resolves to a universal wheel. On older
+Linux, add `--extra-index-url https://download.pytorch.org/whl/cpu` to
+force the CPU build.
+
+**HuggingFace 401 / 403 when downloading Jina-v4** *(later, when ingestion runs)*
+You haven't accepted the model license. Visit
+<https://huggingface.co/jinaai/jina-embeddings-v4>, click **Agree**, and
+make sure `HF_TOKEN` in your `.env` matches that account.
+
+---
+
+## 11. Where to go next
 
 | If you want to…                       | Open                                       |
 | ------------------------------------- | ------------------------------------------ |
-| Understand the design                 | `BUILD_SPEC.md`                            |
 | Understand the project pitch          | `README.md`                                |
+| Understand the locked design          | `BUILD_SPEC.md` (§1–§10)                   |
+| Understand the agentic-layer decisions | `RESPONSE_WORKFLOW.md` (L1–L22)           |
+| Navigate the codebase (for Claude)    | `CLAUDE.md`                                |
 | Work inside the retrieval layer       | `src/retrieval/README.md`                  |
-| Work on the Chainlit UI               | `src/ui/README.md`                         |
-| See what's in the Chroma folder       | `chroma/README.md`                         |
-| Check off remaining build tasks       | `BUILD_SPEC.md §10`                        |
+| Work inside the agentic graph         | `src/graph/README.md`                      |
+| Work inside the Chainlit UI           | `src/ui/README.md`                         |
+| Add or read tests                     | `tests/README.md`                          |
+| Edit a prompt                         | `prompts/README.md` + `prompts/*.j2`       |
+| See what's in `chroma/`               | `chroma/README.md`                         |

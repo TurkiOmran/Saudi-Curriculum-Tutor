@@ -39,24 +39,30 @@ This forces students to second-guess every answer and risks them memorizing cont
 User request + grade + subject (Chainlit ChatProfile)
   ↓
 Rewrite-history step  ── "quiz me on that" → "quiz me on photosynthesis"
-                         (also returns detected language)
+                         (also returns detected language, ar/en)
   ↓
 Query decomposition agent  ── splits compound requests
   ↓ for each sub-request:
-    Intent classifier  ── {Q&A, explain, summarize, revise, quiz}
+    Intent classifier  ── {Q&A, explain, summarize, revise, quiz, chat}
     ↓
-    Embed query  (Jina-v4, retrieval.query mode)
-    ↓
-    Chroma top-20  (filtered by grade collection + subject metadata)
-    ↓
-    Jina Reranker v3  → top-5
-    ↓
-    ALLaM-7B self-check: "Is the answer in these chunks?"
-       ├─ no   → refusal + parent lesson titles of top-3 chunks
-       └─ yes  → grounded generation with inline [n] citations
+    ├─ intent == chat  → bounded friendly reply (no retrieve, no grounding)
+    │                   greetings, thanks, "what can you do?"
+    │
+    └─ educational intents:
+        Embed query (Jina-v4, retrieval.query mode)
+        ↓
+        Chroma top-20  (filtered by grade collection + subject metadata)
+        ↓
+        Jina Reranker v3  → top-5
+        ↓
+        ALLaM-7B self-check: "Is the answer in these chunks?"
+           ├─ no   → refusal + parent lesson titles of top-3 chunks
+           └─ yes  → grounded generation with inline [n] citations
   ↓
 Merge sub-answers → Chainlit renders with expandable source cards
 ```
+
+See `RESPONSE_WORKFLOW.md` L1–L22 for the locked decisions behind each step.
 
 ---
 
@@ -125,46 +131,73 @@ Merge sub-answers → Chainlit renders with expandable source cards
 
 ## Repository Structure
 
-`✓` = exists today, `⬜` = planned (not yet built).
+`✓` = built and working, `⬜` = planned (not yet built).
 
 ```
 .
 ├── README.md                             ✓
 ├── BUILD_SPEC.md                         ✓  Locked design decisions (§1–§10)
-├── RESPONSE_WORKFLOW.md                  ✓  Agentic-layer decisions (L1–L18)
+├── RESPONSE_WORKFLOW.md                  ✓  Agentic-layer decisions (L1–L22)
 ├── SETUP.md                              ✓  Install + run instructions
+├── CLAUDE.md                             ✓  Navigational map (for Claude Code sessions)
 ├── Capstone_Proposal_*.md                ✓  Original proposal (historical)
+├── config.yaml                           ✓  Backend-pluggable LLM config (L17)
 ├── Data/Books/                           ✓  Raw textbook PDFs (gitignored)
 ├── chroma/                               ✓  Persisted Chroma collections per grade
+├── logs/                                 ✓  Daily JSONL query records (L18; gitignored)
+├── prompts/                              ✓  6 Jinja prompt templates (L19), one per node
+├── scripts/                              ✓  smoke_run.py CLI (programmatic end-to-end)
 ├── src/
 │   ├── retrieval/                        ✓  Jina-v4 embedder + Chroma client
-│   ├── ui/                               ✓  Chainlit app (stub handler)
-│   ├── ingest/                           ⬜  OCR + chunking pipeline
-│   └── graph/                            ⬜  LangGraph pipeline per RESPONSE_WORKFLOW L10
-│       ├── nodes/                        ⬜  rewrite, decompose, intent, retrieve,
-│       │                                       self_check, generate, refuse, citations
-│       ├── inner.py                      ⬜  inner graph (run_one per sub-task)
-│       └── outer.py                      ⬜  outer graph (decompose / map / merge)
-├── prompts/                              ⬜  Prompt templates, one per node
-├── eval/                                 ⬜  Smoke + benchmark eval sets
-├── config.yaml                           ⬜  Backend-pluggable LLM config (L17)
-└── scripts/                              ✓  One-off CLI utilities
+│   ├── ui/                               ✓  Chainlit app wired via astream_events (L21)
+│   ├── graph/                            ✓  LangGraph pipeline per RESPONSE_WORKFLOW L10
+│   │   ├── state.py / client.py          ✓  State types, LLMClient factory
+│   │   ├── prompts.py / logging.py       ✓  Jinja loader, @timed + log_query (L18)
+│   │   ├── inner.py / outer.py           ✓  Inner + outer graphs (L9)
+│   │   └── nodes/                        ✓  rewrite, decompose, intent, retrieve,
+│   │                                            self_check, generate, refuse, citations, chat
+│   └── ingest/                           ⬜  OCR + chunking pipeline (collaborator-owned)
+├── tests/                                ✓  pytest suite (61 tests, fake backend)
+└── eval/                                 ⬜  Smoke + benchmark eval sets
 ```
+
+> **What's actually stubbed?** Only `src/graph/nodes/retrieve.py` — it
+> returns 3 hardcoded chunks until ingestion populates Chroma. Everything
+> else along the query path is built.
 
 ---
 
 ## Getting Started
 
-> **Status:** Active development — see `BUILD_SPEC.md` for the locked design and task list.
+> **Status:** The full agentic query path (rewrite → decompose → intent →
+> retrieve → self-check → (generate | refuse | chat) → citations → merge)
+> is built and tested. The only stub left is `retrieve()` — it returns 3
+> hardcoded chunks until ingestion populates Chroma. So you can run the
+> entire pipeline end-to-end today with **no API key** (`backend: fake`)
+> or with a real LLM (`backend: openrouter`, ~$0.001 per query).
 
 ### Prerequisites
-- Python 3.11+
-- A GPU with ≥24 GB VRAM (or a cloud GPU on Modal / Runpod / Lambda) for ALLaM-7B + Jina-v4 + Jina Reranker.
-- Access to the Saudi MoE textbook PDFs from [ien.edu.sa](https://ien.edu.sa).
+
+- Python 3.11 (`uv` will install it for you).
+- `uv` package manager — `brew install uv` or the one-line installer.
+- (Optional) `OPENROUTER_API_KEY` for real LLM answers. Without it the
+  pipeline still runs end-to-end with canned replies.
+- (Optional, later) Cloud GPU for the production ALLaM-7B deployment.
 
 ### Quick start
 
-See [`SETUP.md`](SETUP.md) for the install + run flow. Today that boots the UI shell and the empty Chroma collections; the full pipeline lands as `src/graph/` ships per `RESPONSE_WORKFLOW.md` L10.
+```bash
+git clone <repo-url> Aleem && cd Aleem
+uv sync                                                    # install deps
+cp .env.example .env                                       # optional keys
+uv run python -m src.retrieval.init_chroma                 # create collections
+uv run python scripts/smoke_run.py "what is photosynthesis?"   # no UI, no API key
+(cd src/ui && PYTHONPATH=../.. uv run chainlit run app.py)     # browser UI at :8000
+uv run pytest                                              # 61 tests, ~1.5s
+```
+
+Full step-by-step in [`SETUP.md`](SETUP.md), including how to switch
+backends, troubleshoot rate limits, and tail the JSONL query log.
 
 ---
 

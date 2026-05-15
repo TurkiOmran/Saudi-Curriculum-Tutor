@@ -12,7 +12,7 @@ Aleem is a curriculum-grounded RAG tutor over official Saudi Ministry of Educati
 | ---------------------------------------- | --------------------------------------------- |
 | Understand the project pitch / problem   | `README.md`                                   |
 | Find a **locked design decision**        | `BUILD_SPEC.md` (numbered sections §1–§10)    |
-| Find an **agentic-layer decision** (L1–L21) | `RESPONSE_WORKFLOW.md`                     |
+| Find an **agentic-layer decision** (L1–L22) | `RESPONSE_WORKFLOW.md`                     |
 | Get the repo running from a fresh clone  | `SETUP.md`                                    |
 | Work inside a subfolder                  | That folder's `README.md` (every dir has one) |
 
@@ -57,7 +57,7 @@ Aleem/
 ```
 
 **What's built:** `src/retrieval/` (Chroma client + Jina-v4 embedder),
-`src/graph/` (the full agentic pipeline per L1–L21), `src/ui/` (Chainlit
+`src/graph/` (the full agentic pipeline per L1–L22), `src/ui/` (Chainlit
 handler wired via `astream_events`), `prompts/` (Jinja templates),
 `scripts/smoke_run.py` (programmatic end-to-end smoke test). The only
 remaining ⬜ is `src/ingest/` (collaborator-owned) and the swap of
@@ -87,7 +87,7 @@ Chainlit (src/ui/app.py)
                   → merge
 ```
 
-Orchestration is **LangGraph** (per L8), not plain LangChain. Inner + outer graphs share state via `TaskState` / `OuterState` (L9). All LLM calls go through a single swappable `LLMClient` (L3, L20) — dev backend is OpenRouter free models, deployment is ALLaM-7B; **never call `transformers` directly from a node.** Prompts are Jinja2 templates in `prompts/*.j2` (L19). The Chainlit handler subscribes to `outer_graph.astream_events(...)` for per-node `cl.Step` cards and token streaming (L21) — graph nodes never import `chainlit`.
+Orchestration is **LangGraph** (per L8), not plain LangChain. Inner + outer graphs share state via `TaskState` / `OuterState` (L9). All LLM calls go through a single swappable `LLMClient` (L3, L20) — dev backend is OpenRouter (paid `meta-llama/llama-3.3-70b-instruct` recommended; `:free` route is rate-limited upstream), deployment target is ALLaM-7B; **never call `transformers` directly from a node.** Prompts are Jinja2 templates in `prompts/*.j2` (L19). The Chainlit handler subscribes to `outer_graph.astream_events(...)` for a single ephemeral status line that updates per node and disappears after the answer renders, plus token streaming for `generate` / `chat` (L21 iterated) — graph nodes never import `chainlit`. Six intents per L22: `qa | explain | summarize | revise | quiz | chat`; `chat` skips retrieve and self_check entirely.
 
 ---
 
