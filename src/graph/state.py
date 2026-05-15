@@ -60,9 +60,15 @@ class TaskState(TypedDict, total=False):
     """Inner-graph state. One per atomic task (decompose can produce >1).
 
     Fields per L9:
-      - inputs:  grade, subject, standalone_question, language
+      - inputs:  grade, subject, standalone_question, language, history
       - filled by nodes: intent, chunks, self_check_passed, answer,
                           citations, refused, debug
+
+    Note on `history`: L7 promises that downstream nodes always receive a
+    standalone question — that contract still holds. `history` is here
+    only so the L22 `chat` node can reference recent turns naturally
+    ("you just said hello"); educational nodes (qa/explain/summarize/
+    revise/quiz) still ignore it and rely on `standalone_question`.
     """
 
     # Inputs
@@ -70,6 +76,7 @@ class TaskState(TypedDict, total=False):
     subject: str
     standalone_question: str
     language: Language
+    history: list["HistoryTurn"]
 
     # Filled by nodes
     intent: Intent
@@ -116,12 +123,14 @@ def initial_task_state(
     subject: str,
     standalone_question: str,
     language: Language,
+    history: list["HistoryTurn"] | None = None,
 ) -> TaskState:
     return TaskState(
         grade=grade,
         subject=subject,
         standalone_question=standalone_question,
         language=language,
+        history=history or [],
         chunks=[],
         citations=[],
         refused=False,

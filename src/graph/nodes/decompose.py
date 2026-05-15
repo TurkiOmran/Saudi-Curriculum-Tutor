@@ -41,6 +41,7 @@ async def decompose_node(state: OuterState) -> dict:
     grade = state["grade"]
     subject = state["subject"]
     language = state.get("language", "en")
+    history = state.get("history") or []
 
     if not settings.features.decomposition_enabled:
         questions: list[str] = [standalone]
@@ -66,6 +67,7 @@ async def decompose_node(state: OuterState) -> dict:
             subject=subject,
             standalone_question=q,
             language=language,
+            history=history,
         )
         for q in questions
     ]

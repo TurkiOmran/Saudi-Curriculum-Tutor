@@ -41,12 +41,16 @@ async def chat_node(state: TaskState) -> dict:
         }
 
     llm = get_llm(temperature=settings.llm.generation_temperature)
+    # Render last memory.max_turns*2 history entries so the model can
+    # acknowledge prior turns naturally without leaking unbounded context.
+    history = (state.get("history") or [])[-(settings.memory.max_turns * 2):]
     system, user = render_pair(
         "chat.j2",
         question=state["standalone_question"],
         grade=state["grade"],
         subject=state["subject"],
         language=language,
+        history=history,
     )
     messages = [SystemMessage(content=system), HumanMessage(content=user)]
 
