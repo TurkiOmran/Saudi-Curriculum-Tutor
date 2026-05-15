@@ -25,11 +25,47 @@ from src.graph.state import TaskState
 
 
 class IntentDecision(BaseModel):
-    """Structured output schema for L13."""
+    """Structured output schema for L13 (extended to 6 intents per L22)."""
 
-    intent: Literal["qa", "explain", "summarize", "revise", "quiz"] = Field(
+    intent: Literal["qa", "explain", "summarize", "revise", "quiz", "chat"] = Field(
         description="The classified intent of the student's request."
     )
+
+
+# Cheap heuristic used ONLY when the structured-output LLM call fails.
+# Catches the obvious greetings / thanks / small-talk so the L22 chat
+# path still fires when the classifier returns malformed output. The LLM
+# is still the primary classifier — this just keeps the pipeline useful
+# when the provider hiccups (e.g. Llama-3.3-70b/vLLM intermittent empty
+# tool_call responses).
+_CHAT_KEYWORDS_EN = {
+    "hi", "hello", "hey", "yo", "sup", "howdy",
+    "thanks", "thank", "thx", "ty",
+    "bye", "goodbye", "cya",
+    "ok", "okay", "cool", "nice", "good", "great",
+    "who are you", "what can you do", "what are you",
+}
+_CHAT_KEYWORDS_AR = {
+    "السلام", "مرحبا", "أهلا", "اهلا", "هاي",
+    "شكرا", "شكراً", "ممنون",
+    "مع السلامة", "وداعا",
+    "من أنت", "ماذا تفعل", "ماذا يمكنك",
+}
+
+
+def _looks_like_chat(text: str) -> bool:
+    """True if the message is obviously conversational (fallback heuristic)."""
+    t = (text or "").strip().lower()
+    if not t:
+        return False
+    # Long messages with a question mark are unlikely to be small talk.
+    if "?" in t and len(t.split()) > 3:
+        return False
+    if any(kw in t for kw in _CHAT_KEYWORDS_EN):
+        return True
+    if any(kw in text for kw in _CHAT_KEYWORDS_AR):
+        return True
+    return False
 
 
 @timed("intent")
@@ -50,4 +86,6 @@ async def intent_node(state: TaskState) -> dict:
     except Exception as exc:  # noqa: BLE001 — provider/parser failures, recover gracefully
         debug = dict(state.get("debug") or {})
         debug["intent_error"] = f"{type(exc).__name__}: {str(exc)[:200]}"
-        return {"intent": "qa", "debug": debug}
+        fallback = "chat" if _looks_like_chat(state.get("standalone_question", "")) else "qa"
+        debug["intent_fallback"] = fallback
+        return {"intent": fallback, "debug": debug}

@@ -56,8 +56,14 @@ NODE_LABELS: dict[str, str] = {
     "generate": "Composing answer…",
     "refuse": "Preparing related topics…",
     "citations": "Resolving citations…",
+    "chat": "Replying…",   # L22 — non-curriculum conversational replies
     "merge": "Combining answers…",
 }
+
+# Nodes whose token streams should pipe into the live Chainlit message
+# (L11). Both `generate` (grounded answer) and `chat` (L22 conversational
+# reply) emit user-facing text token-by-token.
+STREAMING_NODES = {"generate", "chat"}
 
 
 def _label_to_key(label: str) -> str:
@@ -225,10 +231,10 @@ async def on_message(message: cl.Message) -> None:
                     step = steps.pop(run_id)
                     await step.update()
 
-            # Token streaming for the generate node only (L21).
+            # Token streaming for the generate / chat nodes (L21, L22).
             if (
                 et == "on_chat_model_stream"
-                and md.get("langgraph_node") == "generate"
+                and md.get("langgraph_node") in STREAMING_NODES
             ):
                 chunk = ev["data"].get("chunk")
                 content = getattr(chunk, "content", None)

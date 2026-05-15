@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal, TypedDict
 
-Intent = Literal["qa", "explain", "summarize", "revise", "quiz"]
+Intent = Literal["qa", "explain", "summarize", "revise", "quiz", "chat"]
 Language = Literal["ar", "en"]
 
 

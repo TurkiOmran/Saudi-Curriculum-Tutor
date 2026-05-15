@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from langgraph.graph import END, StateGraph
 
+from src.graph.nodes.chat import chat_node
 from src.graph.nodes.citations import citations_node
 from src.graph.nodes.generate import generate_node
 from src.graph.nodes.intent import intent_node
@@ -23,6 +24,11 @@ from src.graph.nodes.self_check import self_check_node
 from src.graph.state import TaskState
 
 
+def _route_after_intent(state: TaskState) -> str:
+    """L22 — `chat` intent skips retrieve/self_check entirely."""
+    return "chat" if state.get("intent") == "chat" else "retrieve"
+
+
 def _route_after_self_check(state: TaskState) -> str:
     return "generate" if state.get("self_check_passed") else "refuse"
 
@@ -30,6 +36,7 @@ def _route_after_self_check(state: TaskState) -> str:
 def _build_inner() -> "Any":  # noqa: F821
     g = StateGraph(TaskState)
     g.add_node("intent", intent_node)
+    g.add_node("chat", chat_node)
     g.add_node("retrieve", retrieve_node)
     g.add_node("self_check", self_check_node)
     g.add_node("generate", generate_node)
@@ -37,7 +44,11 @@ def _build_inner() -> "Any":  # noqa: F821
     g.add_node("citations", citations_node)
 
     g.set_entry_point("intent")
-    g.add_edge("intent", "retrieve")
+    g.add_conditional_edges(
+        "intent",
+        _route_after_intent,
+        {"chat": "chat", "retrieve": "retrieve"},
+    )
     g.add_edge("retrieve", "self_check")
     g.add_conditional_edges(
         "self_check",
@@ -47,6 +58,7 @@ def _build_inner() -> "Any":  # noqa: F821
     g.add_edge("generate", "citations")
     g.add_edge("refuse", "citations")
     g.add_edge("citations", END)
+    g.add_edge("chat", END)   # chat bypasses citations — no [n] markers expected
 
     return g.compile()
 
