@@ -22,7 +22,7 @@ Conversation memory: rewrite the message into a standalone question
   ↓
 Query decomposition agent (split compound requests)
   ↓ for each sub-request:
-    Intent classifier → one of {Q&A, explain, summarize, revise, quiz, teacher-support}
+    Intent classifier → one of {Q&A, explain, summarize, revise, quiz}
     ↓
     Embed query with Jina-v4 (retrieval.query mode)
     ↓
@@ -80,7 +80,7 @@ Merge sub-answers → Chainlit renders with expandable source cards
   - Inline `[n]` citation markers per claim.
   - Exact refusal phrase if context is insufficient: `لم أجد هذا في الكتاب المدرسي` / `I couldn't find this in your textbook`.
   - Respond in the user's query language.
-- Format retries on JSON/citation breakage.
+- Format retries on JSON/citation breakage **deferred** — implement only if §6.2 faithfulness eval shows real-world citation breakage (out-of-range `[n]`, missing citations, malformed brackets). Until then the pipeline trusts the model's output and parses it as-is.
 
 ### 4.5 Refusal Path
 - **LLM self-check only** (no score threshold). ALLaM is asked "do these chunks contain the answer? yes/no" before generation.
@@ -96,9 +96,10 @@ Merge sub-answers → Chainlit renders with expandable source cards
 - **No retry/reformulation loop** in this iteration.
 
 ### 4.7 Intent Classifier
-- Few-shot prompt mapping each request to one of: Q&A, explain, summarize, revise, quiz, teacher-support.
+- Few-shot prompt mapping each request to one of: Q&A, explain, summarize, revise, quiz.
 - Implemented as an ALLaM call (or a small fast model) with structured output.
 - Each mode has its own generation prompt template; all share the same retrieval layer and grounding contract.
+- `teacher-support` was previously listed and has been dropped: no defined behavior, no eval coverage, and any plausible interpretation either needs content sources outside the textbook chunks or breaks the grounding contract. Listed as post-demo roadmap.
 
 ### 4.8 UI
 - Chainlit with:

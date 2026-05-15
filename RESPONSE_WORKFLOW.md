@@ -159,12 +159,153 @@ chunks, graph runs end-to-end without an API key.
 
 ---
 
+### L11 — Stream the pipeline, not just the final answer
+Self-check gates generation, so the first answer token is ~2s away. Instead of
+hiding that as a spinner, use Chainlit `cl.Step` to surface each stage:
+"Understanding your question...", "Finding relevant pages...", "Checking the
+textbook...", then stream answer tokens normally in the generate node.
+
+Reframes latency as "showing work" — and the agentic pipeline becomes visible
+to the demo grader (decomposition, retrieval, self-check all on screen).
+
+---
+
+### L12 — `teacher-support` intent dropped
+Five intents only: Q&A, explain, summarize, revise, quiz. `teacher-support`
+removed from BUILD_SPEC §2 and §4.7 — no defined behavior, no eval coverage,
+no available content source for pedagogical advice that wouldn't break grounding.
+Logged in spec as post-demo roadmap.
+
+Affects:
+- `TaskState.intent` literal type → 5 values, not 6.
+- Intent classifier prompt → 5 categories (smaller, more reliable).
+
+---
+
+### L13 — Intent classifier uses LangChain structured output
+The intent node calls `llm.with_structured_output(IntentDecision)` where:
+
+```python
+class IntentDecision(BaseModel):
+    intent: Literal["qa", "explain", "summarize", "revise", "quiz"]
+```
+
+The `Literal` constraint plus the underlying provider's function-calling / JSON
+mode means the return is a typed `IntentDecision` — format hallucination
+impossible. (Semantic mistakes — picking the wrong intent — are still possible.)
+
+**Implication for `config.yaml`:** the chosen OpenRouter dev model must support
+function calling / tool use. "Free + supports tools" — Llama-3.1-8B-Instruct,
+Gemini Flash, Mistral all qualify; the very cheapest text-only models do not.
+List this as a hard requirement when picking the dev model.
+
+Scope: locked for the **intent node** specifically. Whether decompose and
+self-check also switch from defensive-parse to structured output is a separate
+decision (likely yes later — same pattern, different schemas — but not locked now).
+
+---
+
+### L14 — Citation retries deferred; trust the model for now
+No retry loop on `[n]` citation breakage. Parse what the model produced and render
+it. If eval (§6.2 faithfulness eyeball) shows real-world citation failures —
+out-of-range `[n]`, missing citations, malformed brackets — revisit and add the
+one-retry-then-refuse loop (option C). Until then, demo-first: don't build
+infrastructure for a hypothetical failure.
+
+This narrows L5: the "Format retries" promise in BUILD_SPEC §4.4 is **deferred to
+post-eval**, not gone.
+
+---
+
+### L15 — Subtasks run sequentially
+When decompose returns >1 task, the outer graph iterates with a plain `for` loop —
+each task's inner graph finishes before the next starts. Reasons:
+- Compound queries are the minority (~5%); the savings apply rarely.
+- Sequential streaming (L11) tells a clean linear story per task — parallel would
+  show interleaved `cl.Step` updates that confuse a watching grader.
+- Avoids OpenRouter free-tier rate-limit risk on demo day.
+- Upgrade to parallel is one-line later if needed: swap loop for LangGraph `Send`.
+
+---
+
+### L16 — Language detected by piggybacking on the rewrite step
+The rewrite-history node (L7) already runs an LLM on the query. Use structured
+output to return both fields in one call — no extra LLM call:
+
+```python
+class StandaloneQuery(BaseModel):
+    standalone_question: str
+    language: Literal["ar", "en"]
+```
+
+`TaskState.language` is read only by the **refuse** node to pick the canonical
+phrase (`لم أجد هذا في الكتاب المدرسي` vs `I couldn't find this in your textbook`).
+Generate, decompose, rewrite all handle language via prompt instructions
+("respond in the user's language") — no explicit dispatch needed.
+
+**Fallback if L7 is cut:** regex `r"[؀-ۿ]"` on the raw query. Same
+state key, downstream unchanged.
+
+---
+
+### L17 — `config.yaml` shape: backend-pluggable, in-repo, secrets in `.env`
+
+One backend at a time — `backend: openrouter` or `backend: ollama`. Same backend
+serves classifier and generation nodes (no per-node mixing). Per-node temperature
+applies on top: `classifier_temperature: 0.0`, `generation_temperature: 0.6`.
+Reranker model is in config for symmetry with retrieval knobs.
+
+```yaml
+# config.yaml — Aleem agentic-pipeline configuration.
+# Secrets (API keys) live in .env, NOT here.
+
+llm:
+  backend: openrouter   # openrouter | ollama  (one at a time)
+
+  openrouter:
+    # NOTE: model MUST support function/tool calling for structured outputs
+    # (L13 intent classifier, L16 rewrite+language). Free options that qualify:
+    #   meta-llama/llama-3.1-8b-instruct:free
+    #   google/gemini-2.0-flash-exp:free
+    #   mistralai/mistral-7b-instruct:free
+    model: meta-llama/llama-3.1-8b-instruct:free
+    base_url: https://openrouter.ai/api/v1
+    # api key read from OPENROUTER_API_KEY in .env
+
+  ollama:
+    # NOTE: model MUST support tool calling — llama3.1, qwen2.5, mistral-nemo
+    # all work; gemma2 does not. Pick later when local target is decided.
+    model: llama3.1:8b
+    base_url: http://localhost:11434
+
+  classifier_temperature: 0.0   # intent, self-check, decompose, rewrite
+  generation_temperature: 0.6   # final answer
+  max_tokens: 1024
+  timeout_seconds: 30
+
+# Cuttable nodes (BUILD_SPEC Risk #4)
+features:
+  history_rewrite_enabled: true   # L7 — regex fallback for language if false
+  decomposition_enabled: true     # L4 — force [query] if false (no LLM call)
+
+# Retrieval (Turki's retrieve() per L2 + collaborator's reranker seam)
+retrieval:
+  top_k_retrieve: 20
+  top_k_rerank: 5
+  reranker_model: jinaai/jina-reranker-v2-base-multilingual  # spec §9 — v2/v3 TBC
+
+# History window for L7 rewrite node
+memory:
+  max_turns: 4
+```
+
+`.env` needs `OPENROUTER_API_KEY=` added (not in current `.env.example`).
+
+---
+
 ## Open questions / still to grill
 
-- Retry fallback when ALLaM keeps breaking citation format (L5) — recommendation logged, not confirmed
-- Intent classifier structured-output format (JSON? bare label?) — not yet grilled
-- Streaming vs the self-check gate — can't stream until self-check passes; UX detail, not yet grilled
-- `teacher-support` intent — in spec's intent list but not in diagram's notes; behavior undefined
+- (none flagged — major branches resolved; smaller implementation items: prompt-file format, log destination for debug dict, OpenRouter error handling, how Chainlit `app.py` wires the outer graph)
 
 ---
 
