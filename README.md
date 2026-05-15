@@ -38,9 +38,12 @@ This forces students to second-guess every answer and risks them memorizing cont
 ```
 User request + grade + subject (Chainlit ChatProfile)
   ↓
+Rewrite-history step  ── "quiz me on that" → "quiz me on photosynthesis"
+                         (also returns detected language)
+  ↓
 Query decomposition agent  ── splits compound requests
   ↓ for each sub-request:
-    Intent classifier  ── {Q&A, explain, summarize, revise, quiz, teacher-support}
+    Intent classifier  ── {Q&A, explain, summarize, revise, quiz}
     ↓
     Embed query  (Jina-v4, retrieval.query mode)
     ↓
@@ -67,7 +70,7 @@ Merge sub-answers → Chainlit renders with expandable source cards
 | **Reranker** | Jina Reranker v3 |
 | **Generator** | [ALLaM-7B-Instruct-preview](https://huggingface.co/humain-ai/ALLaM-7B-Instruct-preview) — the Saudi national LLM |
 | **UI** | [Chainlit](https://chainlit.io/) with RTL Arabic layout |
-| **Orchestration** | [LangChain](https://www.langchain.com/) |
+| **Orchestration** | [LangGraph](https://langchain-ai.github.io/langgraph/) |
 
 ---
 
@@ -137,9 +140,14 @@ Merge sub-answers → Chainlit renders with expandable source cards
 ├── src/
 │   ├── ingest/                # OCR + chunking pipeline
 │   ├── retrieval/             # Embedding, indexing, reranker
-│   ├── agent/                 # Decomposition, intent classifier
-│   ├── generation/            # ALLaM prompts, self-check, refusal
+│   ├── graph/                 # Agentic + generation pipeline (LangGraph)
+│   │   ├── nodes/             # one file per node: rewrite, decompose, intent,
+│   │   │                      #   retrieve, self_check, generate, refuse, citations
+│   │   ├── inner.py           # inner graph (run_one per sub-task)
+│   │   └── outer.py           # outer graph (decompose / map / merge)
 │   └── ui/                    # Chainlit app
+├── prompts/                   # Prompt templates, one per node, kept out of code
+├── config.yaml                # Backend-pluggable LLM config (OpenRouter / Ollama)
 └── scripts/                   # One-off CLI utilities
 ```
 
