@@ -303,9 +303,34 @@ memory:
 
 ---
 
+### L18 — Logging: JSONL file + one-line stdout summary
+
+Per BUILD_SPEC §4.5, every query writes a structured record:
+```json
+{"ts": "...", "session_id": "...", "query": "...", "grade": 7,
+ "subject": "...", "language": "ar", "intent": "explain",
+ "rerank_scores": [0.94, 0.81, 0.73, 0.67, 0.59],
+ "self_check_passed": true, "refused": false,
+ "latency_ms": {"rewrite": 480, "decompose": 510, ...}}
+```
+
+- Source of truth: `logs/queries-YYYY-MM-DD.jsonl` (gitignored, daily rotation
+  so demo-day file is identifiable).
+- Stdout: one-line summary per query for dev visibility:
+  `[18:31:02] grade=7 ar intent=explain top1=0.94 ✓check 1240ms`
+- Skip literalai/Chainlit tracing for demo — nice-to-have, doesn't aggregate
+  for the §4.5 threshold question.
+
+The JSONL is what feeds the post-demo decision in §4.5 ("add a score threshold if
+data warrants") and the §6.3 benchmark phase.
+
+---
+
 ## Open questions / still to grill
 
-- (none flagged — major branches resolved; smaller implementation items: prompt-file format, log destination for debug dict, OpenRouter error handling, how Chainlit `app.py` wires the outer graph)
+- Prompt file format (jinja templates vs raw `.txt` vs Python strings)
+- OpenRouter / Ollama error handling at the API boundary
+- How Chainlit `app.py` wires the outer graph (sync/async, where streaming hooks in)
 
 ---
 
