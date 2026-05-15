@@ -253,11 +253,13 @@ async def on_message(message: cl.Message) -> None:
 
     final_answer = final_state.get("final_answer", "") or ""
 
-    # If we didn't stream (fake backend or pure refuse path) the message is
-    # empty; fill it from the final state. If we did stream, the streamed
-    # content already matches final_answer.
-    if not answer_msg.content:
-        answer_msg.content = final_answer
+    # Always replace whatever the streaming produced with the canonical
+    # merged answer. Streaming concatenates tokens from each task's generate
+    # node into one cl.Message, which loses the "### Part N" headers and
+    # the "---" separator that merge_node assembles for multi-task queries.
+    # For single-task happy paths the two values are identical (no visual
+    # jump); for refuse / chat / multi-task paths this restores structure.
+    answer_msg.content = final_answer
 
     answer_msg.elements = _citation_elements(final_state)
     await answer_msg.update()

@@ -63,9 +63,15 @@ async def self_check_node(state: TaskState) -> dict:
         question=state["standalone_question"],
         chunks=state.get("chunks") or [],
     )
-    decision: SelfCheckDecision = await structured.ainvoke(
-        [SystemMessage(content=system), HumanMessage(content=user)]
-    )
+    try:
+        decision: SelfCheckDecision = await structured.ainvoke(
+            [SystemMessage(content=system), HumanMessage(content=user)]
+        )
+    except Exception as exc:  # noqa: BLE001 — fail safe to refuse rather than hallucinate
+        debug["self_check_verdict"] = "error"
+        debug["self_check_error"] = f"{type(exc).__name__}: {str(exc)[:200]}"
+        return {"self_check_passed": False, "debug": debug}
+
     debug["self_check_verdict"] = "yes" if decision.passed else "no"
     debug["self_check_reason"] = decision.reason
     return {"self_check_passed": decision.passed, "debug": debug}

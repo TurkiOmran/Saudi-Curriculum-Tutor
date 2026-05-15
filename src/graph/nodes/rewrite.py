@@ -73,10 +73,16 @@ async def rewrite_node(state: OuterState) -> dict:
         structured=StandaloneQuery,
     )
     system, user = render_pair("rewrite.j2", history=history, question=user_query)
-    result: StandaloneQuery = await structured.ainvoke(
-        [SystemMessage(content=system), HumanMessage(content=user)]
-    )
-    return {
-        "standalone_question": result.standalone_question or user_query,
-        "language": result.language,
-    }
+    try:
+        result: StandaloneQuery = await structured.ainvoke(
+            [SystemMessage(content=system), HumanMessage(content=user)]
+        )
+        return {
+            "standalone_question": result.standalone_question or user_query,
+            "language": result.language,
+        }
+    except Exception:  # noqa: BLE001 — passthrough + regex fallback on parser failure
+        return {
+            "standalone_question": user_query,
+            "language": detect_language_fallback(user_query),
+        }

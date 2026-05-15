@@ -42,7 +42,12 @@ async def intent_node(state: TaskState) -> dict:
         structured=IntentDecision,
     )
     system, user = render_pair("intent.j2", question=state["standalone_question"])
-    decision: IntentDecision = await structured.ainvoke(
-        [SystemMessage(content=system), HumanMessage(content=user)]
-    )
-    return {"intent": decision.intent}
+    try:
+        decision: IntentDecision = await structured.ainvoke(
+            [SystemMessage(content=system), HumanMessage(content=user)]
+        )
+        return {"intent": decision.intent}
+    except Exception as exc:  # noqa: BLE001 — provider/parser failures, recover gracefully
+        debug = dict(state.get("debug") or {})
+        debug["intent_error"] = f"{type(exc).__name__}: {str(exc)[:200]}"
+        return {"intent": "qa", "debug": debug}

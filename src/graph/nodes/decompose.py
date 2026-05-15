@@ -52,10 +52,13 @@ async def decompose_node(state: OuterState) -> dict:
             structured=Decomposition,
         )
         system, user = render_pair("decompose.j2", question=standalone)
-        decision: Decomposition = await structured.ainvoke(
-            [SystemMessage(content=system), HumanMessage(content=user)]
-        )
-        questions = [q.strip() for q in decision.tasks if q.strip()] or [standalone]
+        try:
+            decision: Decomposition = await structured.ainvoke(
+                [SystemMessage(content=system), HumanMessage(content=user)]
+            )
+            questions = [q.strip() for q in decision.tasks if q.strip()] or [standalone]
+        except Exception:  # noqa: BLE001 — fall back to a single task on parser failure
+            questions = [standalone]
 
     tasks: list[TaskState] = [
         initial_task_state(
