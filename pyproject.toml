@@ -28,6 +28,15 @@ dependencies = [
     "pillow==12.2.0",
     # Config / env
     "python-dotenv==1.2.2",
+    "pyyaml==6.0.3",
+    # Agentic pipeline — orchestration + LLM client + templating + retries.
+    # RESPONSE_WORKFLOW.md L3 (LLMClient), L8 (LangGraph), L13 (structured
+    # output), L19 (Jinja prompts), L20 (tenacity retry).
+    "langgraph==1.2.0",
+    "langchain-core==1.4.0",
+    "langchain-openai==1.2.1",
+    "jinja2==3.1.6",
+    "tenacity==9.1.4",
 ]
 
 [tool.uv]
