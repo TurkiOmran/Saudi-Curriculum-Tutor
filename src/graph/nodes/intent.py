@@ -37,8 +37,10 @@ async def intent_node(state: TaskState) -> dict:
     if settings.llm.backend == "fake":
         return {"intent": "qa"}
 
-    llm = get_llm(temperature=settings.llm.classifier_temperature)
-    structured = llm.with_structured_output(IntentDecision)
+    structured = get_llm(
+        temperature=settings.llm.classifier_temperature,
+        structured=IntentDecision,
+    )
     system, user = render_pair("intent.j2", question=state["standalone_question"])
     decision: IntentDecision = await structured.ainvoke(
         [SystemMessage(content=system), HumanMessage(content=user)]

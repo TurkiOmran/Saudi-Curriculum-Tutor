@@ -47,8 +47,10 @@ async def decompose_node(state: OuterState) -> dict:
     elif settings.llm.backend == "fake":
         questions = [standalone]
     else:
-        llm = get_llm(temperature=settings.llm.classifier_temperature)
-        structured = llm.with_structured_output(Decomposition)
+        structured = get_llm(
+            temperature=settings.llm.classifier_temperature,
+            structured=Decomposition,
+        )
         system, user = render_pair("decompose.j2", question=standalone)
         decision: Decomposition = await structured.ainvoke(
             [SystemMessage(content=system), HumanMessage(content=user)]

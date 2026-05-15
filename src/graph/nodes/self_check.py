@@ -54,8 +54,10 @@ async def self_check_node(state: TaskState) -> dict:
         debug["self_check_verdict"] = "yes (stub)"
         return {"self_check_passed": True, "debug": debug}
 
-    llm = get_llm(temperature=settings.llm.classifier_temperature)
-    structured = llm.with_structured_output(SelfCheckDecision)
+    structured = get_llm(
+        temperature=settings.llm.classifier_temperature,
+        structured=SelfCheckDecision,
+    )
     system, user = render_pair(
         "self_check.j2",
         question=state["standalone_question"],

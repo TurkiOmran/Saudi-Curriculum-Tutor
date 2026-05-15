@@ -68,8 +68,10 @@ async def rewrite_node(state: OuterState) -> dict:
         }
 
     history = (state.get("history") or [])[-(settings.memory.max_turns * 2):]
-    llm = get_llm(temperature=settings.llm.classifier_temperature)
-    structured = llm.with_structured_output(StandaloneQuery)
+    structured = get_llm(
+        temperature=settings.llm.classifier_temperature,
+        structured=StandaloneQuery,
+    )
     system, user = render_pair("rewrite.j2", history=history, question=user_query)
     result: StandaloneQuery = await structured.ainvoke(
         [SystemMessage(content=system), HumanMessage(content=user)]

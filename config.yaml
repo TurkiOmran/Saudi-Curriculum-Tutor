@@ -11,11 +11,13 @@ llm:
 
   openrouter:
     # NOTE: model MUST support function/tool calling for structured outputs
-    # (L13 intent classifier, L16 rewrite+language). Free options that qualify:
-    #   meta-llama/llama-3.1-8b-instruct:free
-    #   google/gemini-2.0-flash-exp:free
-    #   mistralai/mistral-7b-instruct:free
-    model: meta-llama/llama-3.1-8b-instruct:free
+    # (L13 intent classifier, L16 rewrite+language). Verify currency at
+    # https://openrouter.ai/api/v1/models — the free roster rotates.
+    # Other free tool-capable picks as of 2026-05:
+    #   qwen/qwen3-next-80b-a3b-instruct:free   (best Arabic of free tier)
+    #   openai/gpt-oss-120b:free                (largest free, slower)
+    #   google/gemma-4-31b-it:free              (mid-size, English-leaning)
+    model: meta-llama/llama-3.3-70b-instruct:free
     base_url: https://openrouter.ai/api/v1
     # api key read from OPENROUTER_API_KEY in .env
 
