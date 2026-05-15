@@ -141,7 +141,24 @@ uv export --format requirements-txt --no-hashes --no-emit-project \
   --output-file requirements.txt
 ```
 
-There is **no test suite, no linter, no formatter configured yet.** Don't fabricate `uv run pytest` / `uv run ruff` commands — they will fail. If you add one, document it here.
+### Tests + lint
+
+```bash
+# pytest suite (~1.5s, no network, no API key needed; backend forced to
+# `fake` by tests/conftest.py). See tests/README.md for layout.
+uv run pytest
+
+# A single test file or test
+uv run pytest tests/test_citations.py
+uv run pytest tests/test_intent.py::test_looks_like_chat_true
+
+# Lint + auto-fix (ruff config lives under [tool.ruff] in pyproject.toml)
+uv run ruff check src/ tests/ scripts/
+uv run ruff check --fix src/ tests/ scripts/
+uv run ruff format src/ tests/ scripts/    # formatter (optional)
+```
+
+Both `pytest` and `ruff` should be green before merging.
 
 ---
 

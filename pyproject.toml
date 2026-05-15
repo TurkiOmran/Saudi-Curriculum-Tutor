@@ -44,3 +44,28 @@ dependencies = [
 # a wheel for it. `uv sync` will still create .venv and install all deps,
 # but it won't `pip install .` the project itself.
 package = false
+
+[dependency-groups]
+dev = [
+    "pytest==9.0.3",
+    "pytest-asyncio==1.3.0",
+    "ruff==0.15.13",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-ra -q"
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv", "chroma", "logs", "Data"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]   # long lines OK — Jinja-rich code and bilingual strings
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]   # asserts in tests are intentional

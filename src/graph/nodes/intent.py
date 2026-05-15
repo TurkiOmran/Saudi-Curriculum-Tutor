@@ -12,6 +12,7 @@ qa / explain / summarize / revise / quiz.
 
 from __future__ import annotations
 
+import re
 from typing import Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -38,30 +39,39 @@ class IntentDecision(BaseModel):
 # is still the primary classifier — this just keeps the pipeline useful
 # when the provider hiccups (e.g. Llama-3.3-70b/vLLM intermittent empty
 # tool_call responses).
-_CHAT_KEYWORDS_EN = {
+#
+# English uses word-boundary regex so "hi" doesn't false-match inside
+# "this" / "history" / etc. Arabic uses substring matching (no case-fold
+# or word-boundary issues in our keyword set).
+_CHAT_KEYWORDS_EN: tuple[str, ...] = (
     "hi", "hello", "hey", "yo", "sup", "howdy",
     "thanks", "thank", "thx", "ty",
     "bye", "goodbye", "cya",
     "ok", "okay", "cool", "nice", "good", "great",
     "who are you", "what can you do", "what are you",
-}
-_CHAT_KEYWORDS_AR = {
+)
+_CHAT_KEYWORDS_AR: tuple[str, ...] = (
     "السلام", "مرحبا", "أهلا", "اهلا", "هاي",
     "شكرا", "شكراً", "ممنون",
     "مع السلامة", "وداعا",
     "من أنت", "ماذا تفعل", "ماذا يمكنك",
-}
+)
+
+# Longest-first so multi-word phrases like "what can you do" win over the
+# single "you" if it ever lands in the keyword list.
+_CHAT_PATTERN_EN = re.compile(
+    r"\b(?:"
+    + "|".join(re.escape(w) for w in sorted(_CHAT_KEYWORDS_EN, key=len, reverse=True))
+    + r")\b",
+    re.IGNORECASE,
+)
 
 
 def _looks_like_chat(text: str) -> bool:
     """True if the message is obviously conversational (fallback heuristic)."""
-    t = (text or "").strip().lower()
-    if not t:
+    if not text or not text.strip():
         return False
-    # Long messages with a question mark are unlikely to be small talk.
-    if "?" in t and len(t.split()) > 3:
-        return False
-    if any(kw in t for kw in _CHAT_KEYWORDS_EN):
+    if _CHAT_PATTERN_EN.search(text):
         return True
     if any(kw in text for kw in _CHAT_KEYWORDS_AR):
         return True

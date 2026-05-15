@@ -12,6 +12,8 @@ Per L4 + L15:
 
 from __future__ import annotations
 
+from typing import Any
+
 from langgraph.graph import END, StateGraph
 
 from src.graph.inner import inner_graph
@@ -59,7 +61,7 @@ async def merge_node(state: OuterState) -> dict:
     return {"final_answer": final}
 
 
-def _build_outer() -> "Any":  # noqa: F821
+def _build_outer() -> Any:
     g = StateGraph(OuterState)
     g.add_node("rewrite", rewrite_node)
     g.add_node("decompose", decompose_node)

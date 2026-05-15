@@ -10,7 +10,7 @@ the query path. Keep these in sync.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Literal, TypedDict
 
 Intent = Literal["qa", "explain", "summarize", "revise", "quiz", "chat"]
@@ -76,7 +76,7 @@ class TaskState(TypedDict, total=False):
     subject: str
     standalone_question: str
     language: Language
-    history: list["HistoryTurn"]
+    history: list[HistoryTurn]
 
     # Filled by nodes
     intent: Intent
@@ -123,7 +123,7 @@ def initial_task_state(
     subject: str,
     standalone_question: str,
     language: Language,
-    history: list["HistoryTurn"] | None = None,
+    history: list[HistoryTurn] | None = None,
 ) -> TaskState:
     return TaskState(
         grade=grade,

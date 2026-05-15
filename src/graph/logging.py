@@ -32,8 +32,9 @@ import json
 import sys
 import time
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
+from typing import Any
 
 from src.config import REPO_ROOT
 from src.graph.state import OuterState
@@ -89,7 +90,7 @@ def _record(outer_state: OuterState) -> dict[str, Any]:
     }
 
     return {
-        "ts": datetime.now(tz=timezone.utc).isoformat(),
+        "ts": datetime.now(tz=UTC).isoformat(),
         "session_id": uuid.uuid4().hex[:12],
         "query": outer_state.get("user_query"),
         "standalone_question": outer_state.get("standalone_question"),

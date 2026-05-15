@@ -65,6 +65,7 @@ colorama==0.4.6
     # via
     #   build
     #   click
+    #   pytest
     #   tqdm
     #   traceloop-sdk
     #   uvicorn
@@ -149,6 +150,8 @@ importlib-resources==7.1.0
     # via chromadb
 inflection==0.5.1
     # via opentelemetry-instrumentation-llamaindex
+iniconfig==2.3.0
+    # via pytest
 jinja2==3.1.6
     # via
     #   aleem
@@ -551,11 +554,14 @@ packaging==26.2
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-sqlalchemy
     #   peft
+    #   pytest
     #   transformers
 peft==0.17.1
     # via aleem
 pillow==12.2.0
     # via aleem
+pluggy==1.6.0
+    # via pytest
 propcache==0.5.2
     # via
     #   aiohttp
@@ -594,7 +600,9 @@ pydantic-settings==2.14.1
     #   chromadb
     #   mcp
 pygments==2.20.0
-    # via rich
+    # via
+    #   pytest
+    #   rich
 pyjwt==2.12.1
     # via
     #   chainlit
@@ -603,6 +611,9 @@ pypika==0.51.1
     # via chromadb
 pyproject-hooks==1.2.0
     # via build
+pytest==9.0.3
+    # via pytest-asyncio
+pytest-asyncio==1.3.0
 python-dateutil==2.9.0.post0
     # via kubernetes
 python-dotenv==1.2.2
@@ -662,6 +673,7 @@ rpds-py==0.30.0
     # via
     #   jsonschema
     #   referencing
+ruff==0.15.13
 safetensors==0.7.0
     # via
     #   accelerate
@@ -751,6 +763,7 @@ typing-extensions==4.15.0
     #   opentelemetry-semantic-conventions
     #   pydantic
     #   pydantic-core
+    #   pytest-asyncio
     #   referencing
     #   starlette
     #   torch

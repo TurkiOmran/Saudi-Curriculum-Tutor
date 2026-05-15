@@ -12,6 +12,8 @@ to the parent's `astream_events`).
 
 from __future__ import annotations
 
+from typing import Any
+
 from langgraph.graph import END, StateGraph
 
 from src.graph.nodes.chat import chat_node
@@ -33,7 +35,7 @@ def _route_after_self_check(state: TaskState) -> str:
     return "generate" if state.get("self_check_passed") else "refuse"
 
 
-def _build_inner() -> "Any":  # noqa: F821
+def _build_inner() -> Any:
     g = StateGraph(TaskState)
     g.add_node("intent", intent_node)
     g.add_node("chat", chat_node)

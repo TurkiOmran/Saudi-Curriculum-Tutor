@@ -9,7 +9,7 @@ One `Environment` is built at import time; templates are cached.
 
 from __future__ import annotations
 
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
@@ -26,7 +26,7 @@ _env = Environment(
 )
 
 
-@lru_cache(maxsize=None)
+@cache
 def _template(name: str):
     return _env.get_template(name)
 
