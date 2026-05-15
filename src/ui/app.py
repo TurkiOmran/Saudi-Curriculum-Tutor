@@ -1,27 +1,39 @@
-"""Aleem — Chainlit UI shell.
+"""Aleem — Chainlit UI driving the LangGraph outer pipeline.
 
-This is the *shell*: grade picker (ChatProfile), subject picker (settings
-panel), session state, and a placeholder message handler. There is no
-retriever, embedder, or generator wired in yet — `@cl.on_message` only
-confirms that the user's grade + subject were captured correctly.
+Wiring per L21: `@cl.on_message` invokes `outer_graph.astream_events(...)`
+and maps LangGraph events to Chainlit UI primitives — `cl.Step` cards per
+node start/end (L11 "showing work"), token-by-token streaming for the
+generate node, and `cl.Text` citation cards attached to the final answer.
 
-Run from the repo root:
+Graph nodes stay pure (no `cl.*` calls inside them) — this handler is the
+only place the two worlds meet.
 
-    chainlit run src/ui/app.py
+Run from `src/ui/`:
 
-The Chroma collections must already exist (run `python -m src.retrieval.init_chroma`
-first). This file does not import the retrieval layer — that wiring comes
-in a future task per `BUILD_SPEC.md §10`.
+    cd src/ui && PYTHONPATH=../.. uv run chainlit run app.py
 """
 
 from __future__ import annotations
 
-import chainlit as cl
-from chainlit.input_widget import Select
+import sys
+from pathlib import Path
+
+# When this file is run by Chainlit from `src/ui/`, the repo root is two
+# levels up. Keep `from src...` imports resolvable without requiring
+# PYTHONPATH (the explicit PYTHONPATH=../.. in the run command remains
+# the documented convention; this is a belt-and-suspenders fallback).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+import chainlit as cl  # noqa: E402
+from chainlit.input_widget import Select  # noqa: E402
+
+from src.config import settings  # noqa: E402
+from src.graph.outer import outer_graph  # noqa: E402
+from src.graph.state import initial_outer_state  # noqa: E402
 
 # Subject options. Each entry is (internal_key, bilingual_label).
-# The internal key is what the retrieval pipeline will eventually filter
-# Chroma metadata by; the label is what the user sees.
 SUBJECTS: list[tuple[str, str]] = [
     ("arabic",          "العربية  ·  Arabic"),
     ("islamic_studies", "الدراسات الإسلامية  ·  Islamic Studies"),
@@ -30,6 +42,22 @@ SUBJECTS: list[tuple[str, str]] = [
     ("math",            "الرياضيات  ·  Math"),
 ]
 SUBJECT_LABELS = [label for _, label in SUBJECTS]
+
+
+# Friendly per-node labels for cl.Step (L11). Keys are the LangGraph node
+# names from outer.py / inner.py. Anything not in this map is treated as
+# internal plumbing and won't get its own step card.
+NODE_LABELS: dict[str, str] = {
+    "rewrite": "Understanding your question…",
+    "decompose": "Splitting compound requests…",
+    "intent": "Detecting intent…",
+    "retrieve": "Finding relevant pages…",
+    "self_check": "Checking the textbook…",
+    "generate": "Composing answer…",
+    "refuse": "Preparing related topics…",
+    "citations": "Resolving citations…",
+    "merge": "Combining answers…",
+}
 
 
 def _label_to_key(label: str) -> str:
@@ -81,8 +109,9 @@ async def on_chat_start() -> None:
     profile = cl.user_session.get("chat_profile")  # e.g. "Grade 7"
     grade = int(str(profile).split()[1])
     cl.user_session.set("grade", grade)
+    cl.user_session.set("history", [])
 
-    settings = await cl.ChatSettings(
+    chat_settings = await cl.ChatSettings(
         [
             Select(
                 id="subject",
@@ -93,7 +122,7 @@ async def on_chat_start() -> None:
         ]
     ).send()
 
-    initial_subject = _label_to_key(settings["subject"])
+    initial_subject = _label_to_key(chat_settings["subject"])
     cl.user_session.set("subject", initial_subject)
 
     await cl.Message(
@@ -109,16 +138,39 @@ async def on_chat_start() -> None:
 
 
 @cl.on_settings_update
-async def on_settings_update(settings: dict) -> None:
-    label = settings.get("subject")
+async def on_settings_update(chat_settings: dict) -> None:
+    label = chat_settings.get("subject")
     if label:
         cl.user_session.set("subject", _label_to_key(label))
+
+
+def _citation_elements(final_state: dict) -> list[cl.Text]:
+    """Build expandable source cards for citations across all tasks."""
+    elements: list[cl.Text] = []
+    seen_ids: set[tuple[int, int]] = set()  # (task_idx, citation_n)
+    tasks = final_state.get("tasks") or []
+    for t_idx, task in enumerate(tasks):
+        for cit in (task.get("citations") or []):
+            key = (t_idx, cit.n)
+            if key in seen_ids:
+                continue
+            seen_ids.add(key)
+            chunk = cit.chunk
+            elements.append(
+                cl.Text(
+                    name=f"[{cit.n}] {chunk.lesson_title} · p.{chunk.page}",
+                    content=chunk.text,
+                    display="side",
+                )
+            )
+    return elements
 
 
 @cl.on_message
 async def on_message(message: cl.Message) -> None:
     grade = cl.user_session.get("grade")
     subject = cl.user_session.get("subject")
+    history = cl.user_session.get("history") or []
 
     if grade is None or subject is None:
         await cl.Message(
@@ -129,15 +181,90 @@ async def on_message(message: cl.Message) -> None:
         ).send()
         return
 
-    pretty_subject = _key_to_label(subject)
-    await cl.Message(
-        content=(
-            f"⚙️  **Pipeline not connected yet  ·  لم يتم ربط النظام بعد**\n\n"
-            f"Captured your profile:\n"
-            f"- **Grade  ·  الصف:** {grade} ✓\n"
-            f"- **Subject  ·  المادة:** {pretty_subject} ✓\n\n"
-            f"_Once retrieval, reranking, and generation are wired in, your "
-            f"question (\"{message.content}\") will be answered from the "
-            f"Grade {grade} {pretty_subject} textbook with inline citations._"
-        ),
-    ).send()
+    initial = initial_outer_state(
+        grade=grade,
+        subject=subject,
+        user_query=message.content,
+        history=history,
+    )
+
+    # The placeholder message we'll stream tokens into. Sent now so it
+    # appears immediately under the steps.
+    answer_msg = cl.Message(content="")
+    await answer_msg.send()
+
+    steps: dict[str, cl.Step] = {}
+    root_run_id: str | None = None
+    final_state: dict | None = None
+
+    try:
+        async for ev in outer_graph.astream_events(initial, version="v2"):
+            et = ev["event"]
+            name = ev["name"]
+            run_id = ev["run_id"]
+            md = ev.get("metadata") or {}
+
+            # First event we see is the root chain's start.
+            if root_run_id is None and et == "on_chain_start":
+                root_run_id = run_id
+
+            # Capture final state when the root chain ends.
+            if et == "on_chain_end" and run_id == root_run_id:
+                output = ev["data"].get("output")
+                if isinstance(output, dict):
+                    final_state = output
+
+            # Per-node step cards (L11).
+            label = NODE_LABELS.get(name)
+            if label is not None:
+                if et == "on_chain_start" and run_id not in steps:
+                    step = cl.Step(name=label, type="tool")
+                    await step.send()
+                    steps[run_id] = step
+                elif et == "on_chain_end" and run_id in steps:
+                    step = steps.pop(run_id)
+                    await step.update()
+
+            # Token streaming for the generate node only (L21).
+            if (
+                et == "on_chat_model_stream"
+                and md.get("langgraph_node") == "generate"
+            ):
+                chunk = ev["data"].get("chunk")
+                content = getattr(chunk, "content", None)
+                if isinstance(content, str) and content:
+                    await answer_msg.stream_token(content)
+                elif isinstance(content, list):
+                    for part in content:
+                        if isinstance(part, dict) and isinstance(part.get("text"), str):
+                            await answer_msg.stream_token(part["text"])
+
+    except Exception as exc:  # noqa: BLE001 — surface any failure visibly per L20
+        for step in steps.values():
+            await step.update()
+        await cl.Message(
+            content=f"⚠️ **Pipeline error**\n\n```\n{exc}\n```"
+        ).send()
+        return
+
+    if final_state is None:
+        await cl.Message(content="⚠️ Pipeline produced no state.").send()
+        return
+
+    final_answer = final_state.get("final_answer", "") or ""
+
+    # If we didn't stream (fake backend or pure refuse path) the message is
+    # empty; fill it from the final state. If we did stream, the streamed
+    # content already matches final_answer.
+    if not answer_msg.content:
+        answer_msg.content = final_answer
+
+    answer_msg.elements = _citation_elements(final_state)
+    await answer_msg.update()
+
+    # Append this turn to history for L7 rewrite (Phase E). Cap at the
+    # configured max_turns * 2 (user+assistant per turn).
+    history.append({"role": "user", "content": message.content})
+    history.append({"role": "assistant", "content": final_answer})
+    history = history[-(settings.memory.max_turns * 2):]
+    cl.user_session.set("history", history)
