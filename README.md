@@ -123,32 +123,32 @@ Merge sub-answers → Chainlit renders with expandable source cards
 
 ---
 
-## Repository Structure (planned)
+## Repository Structure
+
+`✓` = exists today, `⬜` = planned (not yet built).
 
 ```
 .
-├── README.md
-├── BUILD_SPEC.md              # Locked design decisions
-├── Capstone_Proposal_*.md     # Original proposal
-├── data/
-│   ├── raw/                   # Downloaded PDFs (gitignored)
-│   ├── ocr/                   # Per-book OCR output
-│   └── chunks/                # Structure-aware chunks + metadata
-├── chroma/                    # Persisted Chroma collections per grade
-├── eval/
-│   └── smoke_60.jsonl         # 60-question smoke eval set
+├── README.md                             ✓
+├── BUILD_SPEC.md                         ✓  Locked design decisions (§1–§10)
+├── RESPONSE_WORKFLOW.md                  ✓  Agentic-layer decisions (L1–L18)
+├── SETUP.md                              ✓  Install + run instructions
+├── Capstone_Proposal_*.md                ✓  Original proposal (historical)
+├── Data/Books/                           ✓  Raw textbook PDFs (gitignored)
+├── chroma/                               ✓  Persisted Chroma collections per grade
 ├── src/
-│   ├── ingest/                # OCR + chunking pipeline
-│   ├── retrieval/             # Embedding, indexing, reranker
-│   ├── graph/                 # Agentic + generation pipeline (LangGraph)
-│   │   ├── nodes/             # one file per node: rewrite, decompose, intent,
-│   │   │                      #   retrieve, self_check, generate, refuse, citations
-│   │   ├── inner.py           # inner graph (run_one per sub-task)
-│   │   └── outer.py           # outer graph (decompose / map / merge)
-│   └── ui/                    # Chainlit app
-├── prompts/                   # Prompt templates, one per node, kept out of code
-├── config.yaml                # Backend-pluggable LLM config (OpenRouter / Ollama)
-└── scripts/                   # One-off CLI utilities
+│   ├── retrieval/                        ✓  Jina-v4 embedder + Chroma client
+│   ├── ui/                               ✓  Chainlit app (stub handler)
+│   ├── ingest/                           ⬜  OCR + chunking pipeline
+│   └── graph/                            ⬜  LangGraph pipeline per RESPONSE_WORKFLOW L10
+│       ├── nodes/                        ⬜  rewrite, decompose, intent, retrieve,
+│       │                                       self_check, generate, refuse, citations
+│       ├── inner.py                      ⬜  inner graph (run_one per sub-task)
+│       └── outer.py                      ⬜  outer graph (decompose / map / merge)
+├── prompts/                              ⬜  Prompt templates, one per node
+├── eval/                                 ⬜  Smoke + benchmark eval sets
+├── config.yaml                           ⬜  Backend-pluggable LLM config (L17)
+└── scripts/                              ✓  One-off CLI utilities
 ```
 
 ---
@@ -162,17 +162,9 @@ Merge sub-answers → Chainlit renders with expandable source cards
 - A GPU with ≥24 GB VRAM (or a cloud GPU on Modal / Runpod / Lambda) for ALLaM-7B + Jina-v4 + Jina Reranker.
 - Access to the Saudi MoE textbook PDFs from [ien.edu.sa](https://ien.edu.sa).
 
-### Quick start (placeholder — fill in after build)
-```bash
-# Install dependencies
-pip install -r requirements.txt
+### Quick start
 
-# One-time corpus preparation: OCR, chunk, embed, build Chroma
-python -m src.ingest.run --grades 4 7 10
-
-# Launch the Chainlit UI
-chainlit run src/ui/app.py
-```
+See [`SETUP.md`](SETUP.md) for the install + run flow. Today that boots the UI shell and the empty Chroma collections; the full pipeline lands as `src/graph/` ships per `RESPONSE_WORKFLOW.md` L10.
 
 ---
 

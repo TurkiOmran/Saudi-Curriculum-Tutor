@@ -181,7 +181,7 @@ Five per grade: **Arabic, Islamic studies, social studies, English, Math**.
 
 ## 10. Task List
 
-See `TaskList` in the agent harness — 22 tasks queued covering download → OCR → chunking → embedding → Chroma → retrieval/rerank → ALLaM → prompts → self-check → refusal → intent classifier → decomposition → Chainlit UI → citations → eval set → eval iteration → cloud fallback → demo script → dry runs.
+Active task tracking for the agentic / query-path layer has moved to `RESPONSE_WORKFLOW.md` (decisions L1–L18). The ingestion half (OCR → chunking → embedding → Chroma population) is owned by the collaborator and tracked separately.
 
 ---
 

@@ -10,14 +10,15 @@ so each module has a single, narrow responsibility.
 | `retrieval/`   | Chroma client, Jina-v4 embedding function, collection setup script   | ✅ scaffolded |
 | `ui/`          | Chainlit app — grade picker, subject picker, message handlers        | ✅ scaffolded (stub handler) |
 | `ingest/`      | OCR + chunking pipeline → adds documents to Chroma                   | ⬜ not built |
-| `agent/`       | Query decomposition + intent classifier                              | ⬜ not built |
-| `generation/`  | ALLaM-7B prompts, self-check, refusal handling                       | ⬜ not built |
+| `graph/`       | LangGraph orchestration — rewrite, decompose, intent, retrieve, self-check, generate, refuse, citations (`RESPONSE_WORKFLOW.md` L9, L10) | ⬜ not built |
+
+> The old `agent/` + `generation/` split is superseded. All query-path code lives in `graph/` per `RESPONSE_WORKFLOW.md` L10.
 
 Pipeline flow (left-to-right is offline → online):
 
 ```
-src/ingest/  →  Chroma collections  →  src/retrieval/  →  src/agent/  →  src/generation/  →  src/ui/
-   (once)         (persisted)            (per query)       (per query)      (per query)        (live)
+src/ingest/  →  Chroma collections  →  src/retrieval/  →  src/graph/  →  src/ui/
+   (once)         (persisted)            (per query)       (per query)     (live)
 ```
 
 ## Running pieces today
