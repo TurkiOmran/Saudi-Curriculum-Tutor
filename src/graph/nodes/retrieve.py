@@ -9,6 +9,7 @@ metadata schema in `src/retrieval/chroma_client.py:8-18`.
 
 from __future__ import annotations
 
+from src.graph.logging import timed
 from src.graph.state import Chunk, TaskState
 
 # Hardcoded chunks tagged with valid (grade, subject) so anything reading
@@ -59,6 +60,7 @@ _STUB_CHUNKS: list[Chunk] = [
 ]
 
 
+@timed("retrieve")
 async def retrieve_node(state: TaskState) -> dict:
     chunks = list(_STUB_CHUNKS)
     debug = dict(state.get("debug") or {})

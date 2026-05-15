@@ -12,11 +12,13 @@ from __future__ import annotations
 
 import re
 
+from src.graph.logging import timed
 from src.graph.state import Citation, TaskState
 
 _CITATION_RE = re.compile(r"\[(\d+)\]")
 
 
+@timed("citations")
 async def citations_node(state: TaskState) -> dict:
     if state.get("refused"):
         return {"citations": []}

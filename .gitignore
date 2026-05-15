@@ -48,6 +48,14 @@ models/
 # Chainlit auto-generated translation bundle — regenerated on first run
 src/ui/.chainlit/translations/
 
+# Stray Chainlit config dropped at repo root if anything imports chainlit
+# from CWD != src/ui/ (e.g. our smoke script imports it transitively via
+# src/ui/app.py). The legitimate config lives under src/ui/.chainlit/.
+/.chainlit/
+
+# Query logs (L18 — daily JSONL, recreated by runs)
+logs/
+
 # OS / editor
 .DS_Store
 Thumbs.db

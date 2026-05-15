@@ -15,11 +15,13 @@ from __future__ import annotations
 from langgraph.graph import END, StateGraph
 
 from src.graph.inner import inner_graph
+from src.graph.logging import log_query, timed
 from src.graph.nodes.decompose import decompose_node
 from src.graph.nodes.rewrite import rewrite_node
 from src.graph.state import OuterState, TaskState
 
 
+@timed("map_tasks")
 async def map_tasks_node(state: OuterState) -> dict:
     """Sequential map: invoke the inner graph once per decomposed task."""
     updated: list[TaskState] = []
@@ -37,12 +39,23 @@ def _format_task_answer(idx: int, task: TaskState, total: int) -> str:
     return f"{header}\n\n{answer}"
 
 
+@timed("merge")
 async def merge_node(state: OuterState) -> dict:
-    """Combine per-task answers into the final response."""
+    """Combine per-task answers into the final response and log the query (L18)."""
     tasks = state["tasks"]
     total = len(tasks)
     parts = [_format_task_answer(i, t, total) for i, t in enumerate(tasks)]
     final = "\n\n---\n\n".join(p for p in parts if p)
+
+    # The L18 record is best built from the merged state, but `state` here
+    # doesn't yet contain the `final_answer` we're about to return — log_query
+    # only reads fields populated upstream (tasks, debug, etc.) so the snapshot
+    # is complete enough for L18 purposes.
+    try:
+        log_query(state)
+    except Exception:  # noqa: BLE001 — logging must never break the pipeline
+        pass
+
     return {"final_answer": final}
 
 

@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from src.config import settings
 from src.graph.client import get_llm
+from src.graph.logging import timed
 from src.graph.prompts import render_pair
 from src.graph.state import OuterState, TaskState, initial_task_state
 
@@ -34,6 +35,7 @@ class Decomposition(BaseModel):
     )
 
 
+@timed("decompose")
 async def decompose_node(state: OuterState) -> dict:
     standalone = state.get("standalone_question") or state["user_query"]
     grade = state["grade"]

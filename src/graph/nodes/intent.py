@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from src.config import settings
 from src.graph.client import get_llm
+from src.graph.logging import timed
 from src.graph.prompts import render_pair
 from src.graph.state import TaskState
 
@@ -31,6 +32,7 @@ class IntentDecision(BaseModel):
     )
 
 
+@timed("intent")
 async def intent_node(state: TaskState) -> dict:
     if settings.llm.backend == "fake":
         return {"intent": "qa"}

@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 
 from src.config import settings
 from src.graph.client import get_llm
+from src.graph.logging import timed
 from src.graph.prompts import render_pair
 from src.graph.state import Language, OuterState
 
@@ -52,6 +53,7 @@ def detect_language_fallback(text: str) -> Language:
     return "ar" if _ARABIC_RANGE.search(text) else "en"
 
 
+@timed("rewrite")
 async def rewrite_node(state: OuterState) -> dict:
     user_query = state["user_query"]
 

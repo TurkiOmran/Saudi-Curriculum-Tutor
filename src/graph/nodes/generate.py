@@ -26,10 +26,12 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from src.config import settings
 from src.graph.client import get_llm
+from src.graph.logging import timed
 from src.graph.prompts import render_pair
 from src.graph.state import TaskState
 
 
+@timed("generate")
 async def generate_node(state: TaskState) -> dict:
     if settings.llm.backend == "fake":
         question = state.get("standalone_question", "")

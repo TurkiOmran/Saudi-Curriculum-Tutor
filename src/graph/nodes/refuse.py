@@ -7,6 +7,7 @@ Phase C (real) — only the upstream `self_check` decision changes.
 
 from __future__ import annotations
 
+from src.graph.logging import timed
 from src.graph.state import TaskState
 
 REFUSAL_AR = "لم أجد هذا في الكتاب المدرسي"
@@ -16,6 +17,7 @@ RELATED_HEADER_AR = "مواضيع ذات صلة في كتابك:"
 RELATED_HEADER_EN = "Related topics in your textbook:"
 
 
+@timed("refuse")
 async def refuse_node(state: TaskState) -> dict:
     language = state.get("language", "en")
     chunks = state.get("chunks") or []
