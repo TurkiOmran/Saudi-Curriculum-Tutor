@@ -194,12 +194,17 @@ async def on_message(message: cl.Message) -> None:
         history=history,
     )
 
-    # The placeholder message we'll stream tokens into. Sent now so it
-    # appears immediately under the steps.
+    # Single ephemeral status message that updates as the pipeline progresses
+    # (ChatGPT / Claude.ai pattern) — removed once the final answer is ready
+    # so it doesn't persist in the transcript. The L11 "showing work" goal
+    # is preserved live; the JSONL log keeps the full trace post-hoc.
+    status_msg = cl.Message(content="⏳ Thinking…", author="Aleem")
+    await status_msg.send()
+
+    # Answer message — tokens stream into this from generate / chat nodes.
     answer_msg = cl.Message(content="")
     await answer_msg.send()
 
-    steps: dict[str, cl.Step] = {}
     root_run_id: str | None = None
     final_state: dict | None = None
 
@@ -220,16 +225,11 @@ async def on_message(message: cl.Message) -> None:
                 if isinstance(output, dict):
                     final_state = output
 
-            # Per-node step cards (L11).
+            # Update the in-place status line on each node start.
             label = NODE_LABELS.get(name)
-            if label is not None:
-                if et == "on_chain_start" and run_id not in steps:
-                    step = cl.Step(name=label, type="tool")
-                    await step.send()
-                    steps[run_id] = step
-                elif et == "on_chain_end" and run_id in steps:
-                    step = steps.pop(run_id)
-                    await step.update()
+            if label is not None and et == "on_chain_start":
+                status_msg.content = f"⏳ {label}"
+                await status_msg.update()
 
             # Token streaming for the generate / chat nodes (L21, L22).
             if (
@@ -246,12 +246,20 @@ async def on_message(message: cl.Message) -> None:
                             await answer_msg.stream_token(part["text"])
 
     except Exception as exc:  # noqa: BLE001 — surface any failure visibly per L20
-        for step in steps.values():
-            await step.update()
+        try:
+            await status_msg.remove()
+        except Exception:  # noqa: BLE001
+            pass
         await cl.Message(
             content=f"⚠️ **Pipeline error**\n\n```\n{exc}\n```"
         ).send()
         return
+
+    # Pipeline finished — drop the ephemeral status line.
+    try:
+        await status_msg.remove()
+    except Exception:  # noqa: BLE001 — never let UI bookkeeping break the answer
+        pass
 
     if final_state is None:
         await cl.Message(content="⚠️ Pipeline produced no state.").send()
