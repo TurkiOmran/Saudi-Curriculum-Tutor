@@ -65,7 +65,7 @@ async def main(question: str, grade: int, subject: str) -> int:
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("question", help="The student's question.")
-    p.add_argument("--grade", type=int, default=7, choices=[4, 7, 10])
+    p.add_argument("--grade", type=int, default=7, choices=[4, 7, 8, 10])
     p.add_argument("--subject", default="islamic_studies")
     args = p.parse_args()
     sys.exit(asyncio.run(main(args.question, args.grade, args.subject)))
