@@ -21,8 +21,10 @@ Language = Literal["ar", "en"]
 class Chunk:
     """A retrieved + reranked textbook chunk.
 
-    Matches the Chroma metadata schema (BUILD_SPEC §4.2). `text` is the
-    document content; everything else is metadata.
+    Matches the Chroma metadata schema documented at
+    `src/retrieval/chroma_client.py:8-26` (OCR_implementation.md D8
+    supersedes BUILD_SPEC §4.2). `text` is the document content;
+    everything else is metadata.
     """
 
     text: str
@@ -33,6 +35,7 @@ class Chunk:
     lesson_title: str
     page: int
     content_type: str  # lesson_body | example | exercise | definition
+    book_id: str = ""  # stable short handle; D10 delete-by-book_id key
     rerank_score: float = 0.0
 
     def as_metadata(self) -> dict[str, Any]:
@@ -40,6 +43,7 @@ class Chunk:
             "grade": self.grade,
             "subject": self.subject,
             "book": self.book,
+            "book_id": self.book_id,
             "chapter": self.chapter,
             "lesson_title": self.lesson_title,
             "page": self.page,
