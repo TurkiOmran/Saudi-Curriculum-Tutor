@@ -66,15 +66,26 @@ class MemoryConfig:
 
 
 @dataclass(frozen=True)
+class IngestionConfig:
+    embed_batch_size: int
+    annotate_images: bool
+
+
+@dataclass(frozen=True)
 class Settings:
     llm: LLMConfig
     features: FeatureFlags
     retrieval: RetrievalConfig
     memory: MemoryConfig
+    ingestion: IngestionConfig
 
     @property
     def openrouter_api_key(self) -> str | None:
         return os.environ.get("OPENROUTER_API_KEY")
+
+    @property
+    def mistral_api_key(self) -> str | None:
+        return os.environ.get("MISTRAL_API_KEY")
 
 
 def _load() -> Settings:
@@ -95,6 +106,7 @@ def _load() -> Settings:
         features=FeatureFlags(**raw["features"]),
         retrieval=RetrievalConfig(**raw["retrieval"]),
         memory=MemoryConfig(**raw["memory"]),
+        ingestion=IngestionConfig(**raw["ingestion"]),
     )
 
 

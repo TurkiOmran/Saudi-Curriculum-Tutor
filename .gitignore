@@ -34,6 +34,7 @@ env/
 data/raw/
 data/ocr/
 data/chunks/
+data/processed/
 chroma/*
 !chroma/README.md
 *.pdf
