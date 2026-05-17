@@ -21,6 +21,9 @@ dependencies = [
     # Embedding model stack (Jina-v4 via HuggingFace)
     "transformers==4.57.6",
     "torch==2.7.1",
+    # Jina-v4's processor pulls in transformers' AutoVideoProcessor which
+    # imports from torchvision — even though we never use the video path.
+    "torchvision==0.22.1",
     "einops==0.8.2",
     "peft==0.17.1",
     "sentencepiece==0.2.1",
