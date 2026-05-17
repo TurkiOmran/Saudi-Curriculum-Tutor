@@ -49,7 +49,16 @@ SUBJECTS: tuple[str, ...] = (
 
 def chroma_dir() -> Path:
     raw = os.environ.get("CHROMA_DIR")
-    return Path(raw).resolve() if raw else DEFAULT_CHROMA_DIR
+    if not raw:
+        return DEFAULT_CHROMA_DIR
+    p = Path(raw)
+    # Relative paths in .env (e.g. `./chroma`) should resolve against the
+    # repo root, not whatever CWD a caller happens to launch from. Without
+    # this, `chainlit run` from src/ui/ would silently create a bogus
+    # src/ui/chroma/ and the ingested collections would appear missing.
+    if not p.is_absolute():
+        p = REPO_ROOT / p
+    return p.resolve()
 
 
 def get_client() -> chromadb.api.ClientAPI:

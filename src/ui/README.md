@@ -31,7 +31,7 @@ hardcoded chunks and a canned LLM stub. Flip to `openrouter` (and set
 
 ## What works today
 
-- Landing screen — three grade cards (Grade 4 / 7 / 10) with bilingual
+- Landing screen — four grade cards (Grade 4 / 7 / 8 / 10) with bilingual
   descriptions.
 - Settings panel (⚙) — subject dropdown with five bilingual options.
 - `@cl.on_message` drives the full outer graph

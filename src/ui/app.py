@@ -100,6 +100,14 @@ async def chat_profiles() -> list[cl.ChatProfile]:
             ),
         ),
         cl.ChatProfile(
+            name="Grade 8",
+            markdown_description=(
+                "**الصف الثاني المتوسط  ·  Grade 8**\n\n"
+                "Middle school stage. Aleem will answer only from your Grade 8 "
+                "Ministry of Education textbooks."
+            ),
+        ),
+        cl.ChatProfile(
             name="Grade 10",
             markdown_description=(
                 "**الصف العاشر  ·  Grade 10**\n\n"
