@@ -69,10 +69,9 @@ print(result["answer"], len(result["citations"]))
 
 ## Not here
 
-- Real `retrieve()` — currently a stub returning hardcoded chunks (L2).
-  The real `query embed → Chroma top-20 → Jina rerank → top-5` is a
-  later task. The stub returns chunks matching the metadata contract in
-  `src/retrieval/chroma_client.py:8-18`, so the swap is one file.
+- The query embed + rerank stack itself — `src/retrieval/` owns the
+  Chroma client, Jina-v4 embedder, and Jina reranker. `retrieve_node`
+  here is just the LangGraph wiring on top.
 - Prompts — `prompts/*.j2`, see `prompts/README.md` (L19).
 - The Chainlit UI itself — `src/ui/app.py`.
 - Logging — `src/graph/logging.py` lands in Phase F (L18).

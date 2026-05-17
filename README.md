@@ -70,10 +70,10 @@ See `RESPONSE_WORKFLOW.md` L1–L22 for the locked decisions behind each step.
 
 | Layer | Choice |
 | --- | --- |
-| **OCR** | [Qari-OCR-0.4.0-VL-4B-Instruct](https://huggingface.co/NAMAA-Space/Qari-OCR-0.4.0-VL-4B-Instruct) — Arabic-specialized vision OCR |
+| **OCR** | [Mistral OCR](https://docs.mistral.ai/studio-api/document-processing/basic_ocr/) (`mistral-ocr-latest`) — hosted, Arabic-capable, with image annotation. See `OCR_implementation.md`. |
 | **Embeddings** | [jina-embeddings-v4](https://huggingface.co/jinaai/jina-embeddings-v4) — multilingual, multimodal, long-context |
-| **Vector store** | [Chroma](https://www.trychroma.com/) — one collection per grade |
-| **Reranker** | Jina Reranker v3 |
+| **Vector store** | [Chroma](https://www.trychroma.com/) — one collection per grade (4, 7, 8, 10) |
+| **Reranker** | [jina-reranker-v2-base-multilingual](https://huggingface.co/jinaai/jina-reranker-v2-base-multilingual) — cross-encoder rerank over Chroma top-K |
 | **Generator** | [ALLaM-7B-Instruct-preview](https://huggingface.co/humain-ai/ALLaM-7B-Instruct-preview) — the Saudi national LLM |
 | **UI** | [Chainlit](https://chainlit.io/) with RTL Arabic layout |
 | **Orchestration** | [LangGraph](https://langchain-ai.github.io/langgraph/) |
@@ -85,7 +85,7 @@ See `RESPONSE_WORKFLOW.md` L1–L22 for the locked decisions behind each step.
 | Stage | Grade |
 | --- | --- |
 | Elementary | Grade 4 |
-| Middle | Grade 7 |
+| Middle | Grades 7 and 8 |
 | High School | Grade 10 |
 
 **Subjects:** Arabic, Islamic studies, social studies, English, Math (Math conditional on OCR quality validation).
@@ -227,7 +227,7 @@ Capstone project for the **Applied AI Bootcamp**. Built by a team of 2.
 ## Acknowledgments
 
 - Ministry of Education, Kingdom of Saudi Arabia — official textbook source.
-- [NAMAA-Space](https://huggingface.co/NAMAA-Space) for the Qari Arabic OCR model.
+- [Mistral AI](https://mistral.ai/) for the hosted OCR API powering the ingestion pipeline.
 - [HUMAIN](https://huggingface.co/humain-ai) / [SDAIA](https://sdaia.gov.sa/) for ALLaM, the Saudi national LLM.
 - [Jina AI](https://jina.ai/) for the embedding and reranker models.
 - The Applied AI Bootcamp instructors and cohort.

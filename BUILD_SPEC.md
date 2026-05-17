@@ -43,10 +43,10 @@ Merge sub-answers → Chainlit renders with expandable source cards
 
 | Layer | Choice | Notes |
 | --- | --- | --- |
-| OCR | `NAMAA-Space/Qari-OCR-0.4.0-VL-4B-Instruct` | Validate on 20-page sample before committing. Vision-LLM fallback (Gemini Flash) for hard pages if needed. |
+| OCR | `mistral-ocr-latest` (Mistral hosted) | Files-API upload + signed URL. Image annotation via `bbox_annotation_format`. See `OCR_implementation.md`. |
 | Embedding | `jinaai/jina-embeddings-v4` | Use `retrieval.query` vs `retrieval.passage` task modes. |
-| Vector store | Chroma (persistent local) | One collection per grade: `grade_4`, `grade_7`, `grade_10`. |
-| Reranker | Jina Reranker v3 | Single Jina ecosystem. Verify exact HF model ID at install time. |
+| Vector store | Chroma (persistent local) | One collection per grade: `grade_4`, `grade_7`, `grade_8`, `grade_10`. |
+| Reranker | `jinaai/jina-reranker-v2-base-multilingual` | Lives at `src/retrieval/reranker.py`; lazy-loaded cross-encoder. |
 | Generator | `humain-ai/ALLaM-7B-Instruct-preview` | Quantize to 4-bit if VRAM is tight. Also used for self-check and intent classifier. |
 | UI | Chainlit | Native source elements, streaming, `ChatProfile` for grade+subject. Custom RTL Arabic CSS. |
 | Orchestration | LangGraph | Pipeline has a per-task loop + a self-check branch + shared state — a graph shape, not a linear LCEL chain. Same ecosystem as the proposal's LangChain. |
@@ -55,17 +55,29 @@ Merge sub-answers → Chainlit renders with expandable source cards
 
 ## 4. Pipeline Details (Locked)
 
-### 4.1 OCR
-- Per-page text-vs-scan detection.
-- Digital-text pages: extract with PyMuPDF / pdfplumber. No OCR.
-- Scanned pages: route to Qari.
-- Math pages have a go/no-go gate on day 3–4 based on equation transcription quality.
-- Diagrams: skipped for this iteration. Jina-v4 multimodal embedding of cropped figures is documented as a post-demo stretch.
+### 4.1 OCR — see `OCR_implementation.md`
+The Qari plan was replaced by Mistral OCR (`mistral-ocr-latest`) once the
+project lost its OCR collaborator. Full design + decisions (D1–D17) live
+in `OCR_implementation.md`; this section is the headline only.
+- Upload via Mistral Files API, then `client.ocr.process(...)` against
+  the returned signed URL.
+- Image annotation **on by default** (`config.yaml :: ingestion.annotate_images`)
+  so diagrams become retrievable via inline `[Image: <description>]`
+  substitutions in chunk text.
+- Per-page caching keyed by PDF SHA-256 — re-running `ingest_book()` on
+  the same PDF/book_id is free.
 
-### 4.2 Chunking
-- **Structure-aware** at lesson/section level.
-- Each chunk metadata: `{grade, subject, book, chapter, lesson_title, page, content_type}`.
-- `content_type ∈ {lesson_body, example, exercise, definition}` — tagged by an LLM post-pass if heading detection is unreliable.
+### 4.2 Chunking — v1 is page-based
+Detail in `OCR_implementation.md` §D6–D9.
+- **v1: one chunk per non-blank OCR'd page.**
+- Each chunk metadata:
+  `{grade, subject, book, book_id, chapter, lesson_title, page, content_type}`.
+  `chapter` and `lesson_title` default to empty strings until the v2 chunker.
+- `content_type ∈ {lesson_body, example, exercise, definition}` — fixed
+  at `lesson_body` in v1 (the LLM post-pass that would tag the others
+  remains v2 work).
+- v2 (lesson-aware chunking with chapter/lesson_title extraction) is a
+  single-file swap of `src/ingest/chunk.py` when we get there.
 
 ### 4.3 Retrieval
 - Dense-only with Jina-v4. **No BM25, no hybrid.**
@@ -113,7 +125,10 @@ Merge sub-answers → Chainlit renders with expandable source cards
 ## 5. Scope
 
 ### 5.1 Grades
-Grades **4, 7, 10** — one per stage (elementary / middle / high school).
+Pilot grades: **4, 7, 8, 10**. The original demo targeted one grade per
+stage (4 / 7 / 10), but grade 8 was added alongside the OCR pipeline so
+step 13 of `OCR_implementation.md` had a real PDF to ingest. The two
+intermediate-school grades (7 and 8) now share a stage.
 
 ### 5.2 Subjects
 Five per grade: **Arabic, Islamic studies, social studies, English, Math**.

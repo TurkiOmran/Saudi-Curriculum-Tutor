@@ -22,9 +22,10 @@ populate it.
 uv run python -m src.retrieval.init_chroma
 ```
 
-This creates three collections — `grade_4`, `grade_7`, `grade_10` — each
-with the Jina-v4 embedding function attached. The collections start empty;
-the ingestion pipeline (forthcoming) will populate them.
+This creates four collections — `grade_4`, `grade_7`, `grade_8`, `grade_10` —
+each with the Jina-v4 embedding function attached. The collections start
+empty; `src/ingest/` populates them via `uv run python -m src.ingest …`
+(see its README for the CLI).
 
 `init_chroma.py` is idempotent: re-running it on an existing store is safe
 and leaves the data untouched.
@@ -38,21 +39,24 @@ grade's collection. See `BUILD_SPEC.md §4.3`.
 
 ## Metadata schema (per chunk)
 
-Every chunk added later will carry:
+Every chunk carries:
 
 | Field          | Type | Example                          |
 | -------------- | ---- | -------------------------------- |
-| `grade`        | int  | `7`                              |
-| `subject`      | str  | `"arabic"`                       |
-| `book`         | str  | `"grade7_arabic_v2024.pdf"`      |
+| `grade`        | int  | `8`                              |
+| `subject`      | str  | `"social_studies"`               |
+| `book`         | str  | `"Social Studies — Grade 8"`     |
+| `book_id`      | str  | `"grade8_social_studies_sem1"`   |
 | `chapter`      | str  | `"الوحدة الثالثة"`               |
 | `lesson_title` | str  | `"قواعد المد"`                   |
-| `page`         | int  | `42`                             |
+| `page`         | int  | `42` (0-indexed; UI renders + 1) |
 | `content_type` | str  | one of: `lesson_body`, `example`, `exercise`, `definition` |
 
-See `BUILD_SPEC.md §4.2`.
+See `OCR_implementation.md` §D8 (current) or `BUILD_SPEC.md §4.2`
+(historical) for the rationale.
 
-## Not here (yet)
+## Not here
 
-- Ingestion code — lives in `src/ingest/` once built.
-- Anything that *reads* from these collections — lives in `src/retrieval/`.
+- Ingestion code — `src/ingest/`.
+- Anything that *reads* from these collections — `src/retrieval/` (the
+  client + embedder + reranker).

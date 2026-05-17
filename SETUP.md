@@ -99,11 +99,12 @@ cp .env.example .env
 Open `.env` and set whichever keys you need. All are optional for the
 default `backend: fake` flow:
 
-| Var                  | When required                              | What it does                                                          |
-| -------------------- | ------------------------------------------ | --------------------------------------------------------------------- |
-| `OPENROUTER_API_KEY` | Only when `llm.backend: openrouter`        | Real LLM calls. Get a key at <https://openrouter.ai/keys>.            |
-| `HF_TOKEN`           | Only for (future) ingestion via Jina-v4    | The model is gated — accept the license on its HF page first.         |
-| `CHROMA_DIR`         | No (defaults to `./chroma`)                | Override where Chroma persists its SQLite + parquet files.            |
+| Var                  | When required                                                  | What it does                                                          |
+| -------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `OPENROUTER_API_KEY` | Only when `llm.backend: openrouter`                            | Real LLM calls. Get a key at <https://openrouter.ai/keys>.            |
+| `HF_TOKEN`           | Embeddings / reranker model download (gated Jina-v4)           | Accept the license on the HF model page first.                        |
+| `MISTRAL_API_KEY`    | Only when running the ingest pipeline (`python -m src.ingest`) | Powers the Mistral OCR call. Key at <https://console.mistral.ai/api-keys/>. |
+| `CHROMA_DIR`         | No (defaults to `./chroma`)                                    | Override where Chroma persists its SQLite + parquet files.            |
 
 ---
 
@@ -153,8 +154,9 @@ until a local target is decided.
 
 ## 6. Initialise the Chroma collections
 
-The agentic pipeline doesn't read from Chroma yet (retrieve is stubbed),
-but the collections need to exist so the rest of the stack imports cleanly.
+The collections need to exist so retrieve has a real backend to query
+(it falls back to stub chunks if the per-grade collection is empty,
+which is what the test suite relies on).
 
 ```bash
 uv run python -m src.retrieval.init_chroma

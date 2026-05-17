@@ -10,7 +10,8 @@ Chroma store. Other modules (`ingest/`, `agent/`, `ui/`) talk to Chroma
 | ------------------- | ---------------------------------------------------------------------------- |
 | `embeddings.py`     | `JinaV4EmbeddingFunction` — Chroma-compatible wrapper around `jinaai/jina-embeddings-v4`. Lazy-loads the HF model on first call. |
 | `chroma_client.py`  | `get_client()`, `get_collection(grade, task_mode)`, plus the `GRADES` and `SUBJECTS` constants and the metadata schema docstring. |
-| `init_chroma.py`    | One-time setup script. Creates `grade_4`, `grade_7`, `grade_10` collections with Jina-v4 attached. Idempotent. |
+| `init_chroma.py`    | One-time setup script. Creates `grade_4`, `grade_7`, `grade_8`, `grade_10` collections with Jina-v4 attached. Idempotent. |
+| `reranker.py`       | `JinaReranker` — cross-encoder rerank using `jinaai/jina-reranker-v2-base-multilingual`. Singleton, lazy-loaded. |
 
 ## How to use
 
@@ -73,6 +74,5 @@ col.add(
 
 ## Not here
 
-- OCR / parsing / chunking — `src/ingest/` (not built yet).
-- Reranking (Jina Reranker v3) — will live in a sibling helper once needed.
-- Generation, prompts, self-check — `src/generation/` (not built yet).
+- OCR / parsing / chunking — `src/ingest/`.
+- Generation, prompts, self-check — `src/graph/nodes/` (per `RESPONSE_WORKFLOW.md` L10).
