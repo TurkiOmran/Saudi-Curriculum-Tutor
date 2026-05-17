@@ -2,7 +2,7 @@
 
 Aleem is a curriculum-grounded RAG tutor over official Saudi Ministry of Education textbooks. Every answer must be traceable to a specific grade-level textbook chunk; refusal is a first-class outcome.
 
-Code lives under `src/` (retrieval, graph orchestration, UI). Each subfolder has a README. Ingestion (OCR + chunking) is not yet in-tree — collaborator owns it.
+Code lives under `src/` (retrieval, graph orchestration, UI, ingestion). Each subfolder has a README. The ingest pipeline (`src/ingest/`) drives Mistral OCR → page-chunking → Jina-v4 embedding → Chroma; design locked in `OCR_implementation.md`.
 
 This project uses `uv` (not pip). See `SETUP.md` for install and run. Run tests with `uv run pytest`; lint with `uv run ruff check src/ tests/ scripts/`. Both must be green before merging.
 

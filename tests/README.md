@@ -1,11 +1,11 @@
 # `tests/` — pytest suite
 
-Critical-path coverage for the agentic pipeline. **All tests run against
-`backend=fake`** — no network, no API key, no token spend. The
-`_force_fake_backend` autouse fixture in `conftest.py` rewrites
-`src.config.settings` for every test, so a developer with a live
-`backend: openrouter` in `config.yaml` still gets fully deterministic
-runs.
+Critical-path coverage for the agentic pipeline and the ingest pipeline.
+**All tests run against `backend=fake` and a mocked Mistral client** —
+no network, no API key, no token spend. The `_force_fake_backend`
+autouse fixture in `conftest.py` rewrites `src.config.settings` for
+every test, so a developer with a live `backend: openrouter` in
+`config.yaml` still gets fully deterministic runs.
 
 ## Files
 
@@ -24,6 +24,12 @@ runs.
 | `test_logging.py`      | L18 — `@timed` decorator merges `latency_ms`, `log_query` JSONL record shape.             |
 | `test_inner_graph.py`  | L9 — qa happy path, refusal path, chat path bypasses retrieve.                            |
 | `test_outer_graph.py`  | L9 — single-task happy path, JSONL written by merge, L16 Arabic detection, L7 history.    |
+| `test_ingest_types.py` | `Chunk` / `IngestResult` frozen invariants.                                               |
+| `test_ingest_chunk.py` | D6–D9 — page-based chunks, blank-page skip, image-annotation inline, deterministic IDs. Runs against the captured K05 fixture. |
+| `test_ingest_load.py`  | D10–D11 — delete-by-`book_id`, batched `add`, empty-chunks guard. Fake Chroma collection. |
+| `test_ingest_ocr.py`   | D3 / D12 — atomic write, SHA-256 hash, 4xx denylist (incl. 429-stays-retryable), upload cache, OCR cache, hash-mismatch invalidation, `annotate_images` pass-through. Fake Mistral client. |
+| `test_ingest_cli.py`   | D13 — `--grade` choices restricted to `(4, 7, 8, 10)`, `--subject` validated, `--pages` parser. |
+| `fixtures/`            | Real Mistral OCR output captured from the validation probe — see `fixtures/README.md`.    |
 
 ## Run
 
