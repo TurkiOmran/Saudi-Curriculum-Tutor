@@ -1,50 +1,46 @@
-# `prompts/` — Jinja2 prompt templates, one per node
+# `prompts/` — Jinja2 prompt templates (workflow-sandbox)
 
-Per L10 + L19, prompts live out of code so they can be iterated on without
-touching Python. Format is **Jinja2** (`.j2`). The generate template uses
-real iteration to render pre-numbered chunks (`[1] … [2] …`) that L5
-depends on.
+Two templates on this branch. The §1 collapse of intent / self_check /
+decompose / rewrite / generate / chat into one agent (`docs/docs/WORKFLOW_SANDBOX.md`)
+collapses six prompts into one.
 
 ## Files
 
-| Template          | Used by           | Variables                                                                                                                     | Phase |
-| ----------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------- | ----- |
-| `intent.j2`       | `nodes/intent`    | `question` — the standalone question.                                                                                          | C     |
-| `self_check.j2`   | `nodes/self_check`| `question`, `chunks` (list of `Chunk`).                                                                                        | C     |
-| `generate.j2`     | `nodes/generate`  | `question`, `chunks`, `intent`, `language`. Branches on `intent` (qa / explain / summarize / revise / quiz).                   | C     |
-| `decompose.j2`    | `nodes/decompose` | `question`.                                                                                                                    | C     |
-| `rewrite.j2`      | `nodes/rewrite`   | `question`, `history` (last `memory.max_turns` turns).                                                                         | E     |
+| Template       | Used by                | Variables                                                  |
+| -------------- | ---------------------- | ---------------------------------------------------------- |
+| `agent.j2`     | `src/graph/agent.py`   | `grade`, `subject`, `max_tool_calls`.                      |
+| `verifier.j2` | `src/graph/verifier.py` | `question`, `answer`, `chunks` (list of `Chunk`).          |
 
 ## Loading
 
-Resolved by Jinja's `FileSystemLoader` rooted at this folder. Nodes import
-a small helper (lands in Phase C alongside the first real prompt):
+`src/graph/prompts.py` is the helper. Two entry points:
 
 ```python
-from jinja2 import Environment, FileSystemLoader
-env = Environment(
-    loader=FileSystemLoader(REPO_ROOT / "prompts"),
-    autoescape=False,           # prompts are not HTML
-    trim_blocks=True,
-    lstrip_blocks=True,
-)
-tpl = env.get_template("generate.j2")
-prompt = tpl.render(question="…", chunks=[…], intent="explain", language="ar")
+from src.graph.prompts import render, render_pair
+
+# System-only prompt (no \n---\n separator): returns one string
+system = render("agent.j2", grade=7, subject="islamic_studies", max_tool_calls=4)
+
+# System/user pair: split on the top-level \n---\n divider
+system, user = render_pair("verifier.j2", question=q, answer=a, chunks=chs)
 ```
 
 ## Conventions
 
-- One template per node, named after the node.
-- **Render chunks via the `{% for %}` loop**, not a pre-rendered string —
-  the template tells the whole grounding story to anyone reading it.
-- `loop.index` is the 1-based citation number you want ALLaM to emit, so
-  `[{{ loop.index }}]` is the marker.
-- Keep `system` and `user` separated by a top-level `---` divider (the
-  node splits on this before calling the LLM).
+- One file per LLM call. The agent has exactly two LLM calls per turn
+  (the agent itself + the topical verifier) → two templates.
+- **Render chunks via `{% for %}`**, not a pre-rendered string — the
+  template tells the whole grounding story to anyone reading it.
+- `loop.index` is the 1-based citation number; the agent's own tool
+  output uses the same numbering, so the verifier prompt can refer to
+  chunks by `[1] … [5]` directly.
+- Templates that need a system/user split use `\n---\n` on its own line.
+  `render_pair()` splits there; `render()` returns the raw single string
+  for system-only prompts.
 
 ## Not here
 
-- Python-side templating helpers — `src/graph/nodes/*` use these templates
-  but the loader code lives next to the first real-LLM node in Phase C.
-- Per-grade or per-subject prompt variants — single template per node;
+- Per-grade or per-subject prompt variants — single template per call;
   variation goes through `{% if %}` branches inside the template.
+- Conversation/chat-only prompts — gone. The agent handles greetings
+  and small talk in its own voice without ever calling retrieve.

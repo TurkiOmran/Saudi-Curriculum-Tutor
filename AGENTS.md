@@ -13,15 +13,17 @@ This project uses `uv` (not pip). See `SETUP.md` for install and run. Run tests 
 | Understand the project pitch / problem       | `README.md`                                   |
 | Find a locked design decision                | `BUILD_SPEC.md` (numbered sections §1–§10)    |
 | Find an agentic-layer decision (L1–L22)      | `RESPONSE_WORKFLOW.md`                        |
+| Find the workflow-sandbox agent spec         | `docs/docs/WORKFLOW_SANDBOX.md`                         |
 | Get the repo running from a fresh clone      | `SETUP.md`                                    |
 | Work inside a subfolder                      | That folder's `README.md`                     |
 
-`RESPONSE_WORKFLOW.md` overrides `BUILD_SPEC.md` where they disagree.
+Precedence when they disagree: `docs/docs/WORKFLOW_SANDBOX.md` (this branch only) > `RESPONSE_WORKFLOW.md` > `BUILD_SPEC.md`.
 
 ## Working in this repo
 
-- `main` is the active branch and contains the built query path (intent → rewrite → decompose → retrieve → self_check → generate, plus the chat intent). The `agentic-pipeline` branch is historical.
-- Read `BUILD_SPEC.md` and `RESPONSE_WORKFLOW.md` before proposing any architectural change. Decisions in those docs came out of grilling sessions; revisiting one is a new grilling round, not an off-the-cuff suggestion.
+- **You are on `workflow-sandbox`.** This branch replaces the two-graph LangGraph pipeline in `src/graph/` with a single tool-calling agent + topical verifier per `docs/docs/WORKFLOW_SANDBOX.md`. `main` still has the L1–L22 multi-stage pipeline; the merge decision is gated on eval (§12).
+- The agent entry point is `src/graph/agent.py::run_agent`. The single tool is `src/graph/tools.py::retrieve`. Post-hoc safety is `src/graph/parse.py` + `src/graph/verifier.py`. The Chainlit UI in `src/ui/app.py` drives the agent via `astream_events` so tool calls surface as "Searching: …" cards.
+- Read `BUILD_SPEC.md`, `RESPONSE_WORKFLOW.md`, AND `docs/docs/WORKFLOW_SANDBOX.md` before proposing any architectural change. Decisions in those docs came out of grilling sessions; revisiting one is a new grilling round, not an off-the-cuff suggestion.
 - When a change invalidates something stated in this file or a README, update the doc in the same commit.
 
 ## Commits

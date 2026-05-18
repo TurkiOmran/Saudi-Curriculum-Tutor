@@ -72,12 +72,32 @@ class IngestionConfig:
 
 
 @dataclass(frozen=True)
+class AgentConfig:
+    """Workflow-sandbox tool-calling agent knobs (docs/WORKFLOW_SANDBOX.md §8)."""
+
+    max_tool_calls: int   # §3 hard ceiling on retrieve calls per turn
+
+
+@dataclass(frozen=True)
+class VerifierConfig:
+    """Topical verifier knobs (docs/WORKFLOW_SANDBOX.md §4 / §8)."""
+
+    enabled: bool
+    # Empty string means "reuse llm.openrouter.model" — the safe default for the
+    # OpenRouter free tier. Override with a smaller / faster model id when one
+    # is available.
+    model: str
+
+
+@dataclass(frozen=True)
 class Settings:
     llm: LLMConfig
     features: FeatureFlags
     retrieval: RetrievalConfig
     memory: MemoryConfig
     ingestion: IngestionConfig
+    agent: AgentConfig
+    verifier: VerifierConfig
 
     @property
     def openrouter_api_key(self) -> str | None:
@@ -107,6 +127,8 @@ def _load() -> Settings:
         retrieval=RetrievalConfig(**raw["retrieval"]),
         memory=MemoryConfig(**raw["memory"]),
         ingestion=IngestionConfig(**raw["ingestion"]),
+        agent=AgentConfig(**raw["agent"]),
+        verifier=VerifierConfig(**raw["verifier"]),
     )
 
 
