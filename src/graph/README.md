@@ -1,77 +1,85 @@
-# `src/graph/` — LangGraph orchestration of the query path
+# `src/graph/` — workflow-sandbox tool-calling agent
 
-The agentic half of Aleem. Owns the pipeline from a raw user message to a
-grounded, cited answer. Decisions live in `RESPONSE_WORKFLOW.md` (L1–L21).
+The agentic half of Aleem on the `workflow-sandbox` branch. Replaces the
+two-graph LangGraph pipeline from `main` (rewrite → decompose → map(intent
+→ retrieve → self_check → (generate | refuse) → citations) → merge) with
+**one tool-calling agent + one tool + two post-hoc safety layers**.
+
+Spec: `docs/docs/WORKFLOW_SANDBOX.md` (§1–§13). The branch is the toggle (§8) —
+shipping merges this directory wholesale over `main`'s `src/graph/`.
 
 ## Files
 
-| File          | What it does                                                                                                                                                                  |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `state.py`    | `Chunk` (mirrors the Chroma metadata schema), `Citation`, `TaskState` (inner-graph state, L9), `OuterState` (outer-graph state), plus `initial_*` constructors.               |
-| `client.py`   | `get_llm(temperature=...)` — single factory returning a LangChain `BaseChatModel`. Backend (`fake` / `openrouter` / `ollama`) selected by `config.yaml` (L3, L17, L20).        |
-| `nodes/`      | One file per graph node — see `nodes/README.md`.                                                                                                                              |
-| `inner.py`    | `inner_graph` — `intent → retrieve → self_check → (generate \| refuse) → citations` (L9). The L1 / L6 routing lives here.                                                     |
-| `outer.py`    | `outer_graph` — `rewrite → decompose → map_tasks → merge`. `map_tasks` invokes `inner_graph.ainvoke` in a sequential `for` loop per L15.                                       |
+| File | What it does |
+| ---- | ------------ |
+| `state.py`    | `Chunk` (mirrors the Chroma metadata schema), `Citation`, `HistoryTurn`, `ToolCallRecord`, the unified `AgentState` TypedDict, and `initial_agent_state()`. No more `TaskState` / `OuterState`. |
+| `client.py`   | `get_llm(temperature=..., for_agent=False)` + `get_verifier_llm()`. The agent path uses `for_agent=True` to skip the L20 retry wrap (`RunnableRetry` breaks `create_react_agent`'s `bind_tools` check). |
+| `tools.py`    | `@tool retrieve(query)` — the agent's only tool. Wraps Chroma top-20 → Jina rerank top-5, plus the empty-collection stub fallback. Per-request `grade`/`subject` flow through `contextvars` so the LLM-facing tool signature stays narrow. |
+| `prompts.py`  | Jinja2 template loader. `render(name, **vars)` for system-only prompts (used by `agent.py`), `render_pair(name, **vars)` for `\n---\n`-split (system, user) pairs (used by `verifier.py`). |
+| `parse.py`    | `parse_citations(answer, chunks) -> (Citations, flags)` — §3 layer 2 structural check. Pure function. Flags: `out_of_range:[n]`, `no_citations`. |
+| `verifier.py` | `verify_topical(question, answer, chunks) -> VerifierDecision` — §4 layer 3 topical check via `with_structured_output(VerifierDecision)`. Fails open on infra errors so the verifier can't break the pipeline. |
+| `agent.py`    | `build_agent(grade, subject, llm=None)` + `run_agent(state)` + `finalize_agent_run(...)`. `create_react_agent` from `langgraph.prebuilt` + ceiling enforcement via `recursion_limit = 2 * max_tool_calls + 3`. |
+| `logging.py`  | `@timed("phase")` + `log_query(state)` for the new JSONL schema (`tool_calls`, `verifier_verdict`, `citation_flags`, `refusal_reason`, `latency_ms{agent_loop, verifier, total}`). |
 
 ## How to run end-to-end
 
 ```bash
-# Day-one stub run — no API key, llm.backend: fake in config.yaml
-uv run python scripts/smoke_run.py "what is photosynthesis?"
+# Fake-backend run — no API key. Returns a canned answer with zero tool
+# calls (the fake model doesn't emit tool_call AIMessages by default).
+uv run python scripts/smoke_run.py "what is photosynthesis?" --grade 7 --subject islamic_studies
 
-# Real run (Phase B+) — set OPENROUTER_API_KEY in .env and flip
+# Real run — set OPENROUTER_API_KEY in .env and flip
 #   llm.backend: openrouter
-# in config.yaml.
+# in config.yaml. The agent will actually call retrieve(), receive chunks,
+# write inline [n] citations, and pass the verifier.
 uv run python scripts/smoke_run.py "what is photosynthesis?"
 ```
 
-Inner graph in isolation:
+Programmatic invocation:
 
 ```python
 import asyncio
-from src.graph.inner import inner_graph
-from src.graph.state import initial_task_state
+from src.graph.agent import run_agent
+from src.graph.state import initial_agent_state
 
-task = initial_task_state(grade=7, subject="islamic_studies",
-                          standalone_question="what is photosynthesis?",
-                          language="en")
-result = asyncio.run(inner_graph.ainvoke(task))
-print(result["answer"], len(result["citations"]))
+state = initial_agent_state(
+    grade=7, subject="islamic_studies",
+    user_query="what is photosynthesis?",
+)
+result = asyncio.run(run_agent(state))
+print(result["final_answer"])
+print(len(result["tool_calls"]), "tool calls")
+print(result["verifier_verdict"])
 ```
 
 ## Key design points
 
-- **One LLMClient, one config switch (L3).** Nodes never import a specific
-  provider. Swap backends by editing `config.yaml` `llm.backend`.
-- **Inner / outer split (L9).** Inner runs once per atomic task; outer
-  handles session-level concerns (history rewrite, decomposition, merge).
-  Subtasks run **sequentially** per L15.
-- **Nodes stay pure (L21).** No `cl.*` imports inside nodes. The Chainlit
-  UI subscribes to LangGraph events via `outer_graph.astream_events()`,
-  so the same graph runs identically in the smoke script, in tests, and in
-  any future non-UI caller.
-- **Cuttable nodes (Risk #4).** `decompose` and `rewrite` each respect a
-  `features.*_enabled` flag in `config.yaml` and bypass the LLM when off.
-- **Inline citations (L5).** `generate` writes `[n]` markers; `citations`
-  only parses them — it never invents a chunk↔number mapping.
-- **Strict refusal (L1).** When self-check fails, `refuse` returns the
-  canonical phrase + parent lesson titles of the top-3 chunks. No free
-  generation.
-
-## Phase status (build order per the original plan)
-
-- ✅ **Phase A** — scaffold + stubs; graph runs end-to-end without an API key.
-- ✅ **Phase B** — OpenRouter LLM client with `Runnable.with_retry` per L20.
-- ✅ **Phase C** — real node impls behind a `backend=fake` fallback (intent / self_check / generate / decompose).
-- ✅ **Phase D** — Chainlit wired via `astream_events` per L21.
-- ✅ **Phase E** — L7 history rewrite + L16 language detection.
-- ✅ **Phase F** — L18 JSONL + stdout logging via `@timed` + `log_query`.
+- **One LLMClient, one config switch (L3, preserved).** `client.py` keeps
+  the swappable-backend pattern. Set `for_agent=True` for the agent path
+  to skip the retry wrap that breaks `create_react_agent`.
+- **Tool call budget = 4 (§3).** Hard ceiling, enforced via LangGraph's
+  `recursion_limit`. Ceiling-hit and verifier-rejection produce the same
+  §3 refusal shape (agent's voice + topic suggestions from already-
+  retrieved chunks).
+- **Gradient signal, not a binary gate (§4).** Rerank scores are injected
+  into the agent's context (`[n] (relevance: 0.94) …`), replacing L6's
+  yes/no self-check. The agent judges contextually; the verifier is the
+  actual backstop.
+- **Refusal is prompt-driven + verifier-checked (§3, supersedes L1).**
+  No canonical phrase. Warmth comes from suggestions; trust signal lives
+  in the L18 verifier verdict, not in the wording.
+- **Citations are still inline (L5, preserved).** The agent writes `[n]`
+  per claim; `parse.py` maps them to `Citation` objects. Out-of-range or
+  missing markers are flagged structurally, never repaired.
+- **Verifier fails open.** If the structured-output call crashes (e.g.
+  malformed JSON from the model), the verifier returns `on_topic=True`
+  with the error in the `reason` field. Better to ship an answer than
+  block on infrastructure.
 
 ## Not here
 
-- The query embed + rerank stack itself — `src/retrieval/` owns the
-  Chroma client, Jina-v4 embedder, and Jina reranker. `retrieve_node`
-  here is just the LangGraph wiring on top.
-- Prompts — `prompts/*.j2`, see `prompts/README.md` (L19).
-- The Chainlit UI itself — `src/ui/app.py`.
-- Logging — `src/graph/logging.py` lands in Phase F (L18).
+- Chroma client + embedder + reranker — see `src/retrieval/`. `tools.py`
+  is just the LangGraph wiring on top.
+- Prompts — see `prompts/README.md` (`agent.j2`, `verifier.j2`).
+- The Chainlit UI — see `src/ui/app.py`. It uses `build_agent` +
+  `finalize_agent_run` directly so it can stream tool calls and tokens.

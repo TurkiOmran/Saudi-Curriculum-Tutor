@@ -1,4 +1,4 @@
-"""Tests for the `@tool retrieve()` wrapper (WORKFLOW_SANDBOX.md §3)."""
+"""Tests for the `@tool retrieve()` wrapper (docs/WORKFLOW_SANDBOX.md §3)."""
 
 from __future__ import annotations
 

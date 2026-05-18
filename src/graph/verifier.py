@@ -1,4 +1,4 @@
-"""Topical verifier (WORKFLOW_SANDBOX.md §4, safety layer 3).
+"""Topical verifier (docs/WORKFLOW_SANDBOX.md §4, safety layer 3).
 
 One cheap structured-output LLM call asks: "is this answer about a topic
 the chunks actually discuss?" Rejection means refuse immediately — no

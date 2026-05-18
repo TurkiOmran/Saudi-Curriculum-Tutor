@@ -1,4 +1,4 @@
-"""Citation parse + structural flag detection (WORKFLOW_SANDBOX.md §3, layer 2).
+"""Citation parse + structural flag detection (docs/WORKFLOW_SANDBOX.md §3, layer 2).
 
 `parse_citations(answer, chunks)` walks the model's output for `[n]`
 markers, maps them to retrieved chunks, and flags structural problems:

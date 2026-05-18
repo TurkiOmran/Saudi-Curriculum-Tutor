@@ -1,6 +1,6 @@
 """Aleem — Chainlit UI driving the workflow-sandbox tool-calling agent.
 
-Wiring per WORKFLOW_SANDBOX.md §3 / §7:
+Wiring per docs/WORKFLOW_SANDBOX.md §3 / §7:
 
   - Tool calls become ephemeral status updates (`Searching: "<query>"`).
   - The agent's chat-model stream pipes tokens into the live answer

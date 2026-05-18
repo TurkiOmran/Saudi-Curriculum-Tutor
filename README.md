@@ -33,36 +33,45 @@ This forces students to second-guess every answer and risks them memorizing cont
 
 ---
 
-## Architecture
+## Architecture (workflow-sandbox)
+
+Aleem on the `workflow-sandbox` branch uses **one tool-calling agent +
+one tool + two post-hoc safety layers**. The shape is locked in
+`docs/docs/WORKFLOW_SANDBOX.md`.
 
 ```
-User request + grade + subject (Chainlit ChatProfile)
+User request + grade + subject (Chainlit ChatProfile)  +  chat history
   ↓
-Rewrite-history step  ── "quiz me on that" → "quiz me on photosynthesis"
-                         (also returns detected language, ar/en)
+Tool-calling agent  (LangGraph create_react_agent, looped)
+  • System prompt: tutor over Saudi MoE textbooks; cite every claim [n];
+    answer ONLY from chunks; resolve references from history; use topic
+    terms for retrieval; read relevance scores; refuse in own voice if
+    chunks don't cover the question.
+  • Tool: retrieve(query) → Chroma top-20 → Jina rerank top-5
+                          → "[n] (relevance: 0.94) ..."
+  • Budget: max 4 retrieve calls per turn
   ↓
-Query decomposition agent  ── splits compound requests
-  ↓ for each sub-request:
-    Intent classifier  ── {Q&A, explain, summarize, revise, quiz, chat}
-    ↓
-    ├─ intent == chat  → bounded friendly reply (no retrieve, no grounding)
-    │                   greetings, thanks, "what can you do?"
-    │
-    └─ educational intents:
-        Embed query (Jina-v4, retrieval.query mode)
-        ↓
-        Chroma top-20  (filtered by grade collection + subject metadata)
-        ↓
-        Jina Reranker v3  → top-5
-        ↓
-        ALLaM-7B self-check: "Is the answer in these chunks?"
-           ├─ no   → refusal + parent lesson titles of top-3 chunks
-           └─ yes  → grounded generation with inline [n] citations
+Streamed answer with inline [n] markers
   ↓
-Merge sub-answers → Chainlit renders with expandable source cards
+Layer 2: Citation parse  ── structural: out-of-range [n]? missing
+                            citations? Flagged in the log; never repaired.
+  ↓
+Layer 3: Topical verifier  ── one cheap structured-output LLM call
+                              ("is this answer about a topic the chunks
+                              actually discuss?"). Default-on; on
+                              off_topic → refuse immediately in the
+                              agent's voice + topic suggestions.
+  ↓
+Chainlit renders the answer + side citation cards
+  ↓
+L18 JSONL log: tool calls, citation flags, verifier verdict,
+               rerank scores, latency
 ```
 
-See `RESPONSE_WORKFLOW.md` L1–L22 for the locked decisions behind each step.
+See `docs/docs/WORKFLOW_SANDBOX.md` (§3 diagram, §4 safety model, §12 eval bar) for
+the full design. `RESPONSE_WORKFLOW.md` (L1–L22) describes the older
+multi-stage pipeline that lives on `main` — that's the comparison
+baseline for the sandbox's merge decision.
 
 ---
 
@@ -76,7 +85,7 @@ See `RESPONSE_WORKFLOW.md` L1–L22 for the locked decisions behind each step.
 | **Reranker** | [jina-reranker-v2-base-multilingual](https://huggingface.co/jinaai/jina-reranker-v2-base-multilingual) — cross-encoder rerank over Chroma top-K |
 | **Generator** | [ALLaM-7B-Instruct-preview](https://huggingface.co/humain-ai/ALLaM-7B-Instruct-preview) — the Saudi national LLM |
 | **UI** | [Chainlit](https://chainlit.io/) with RTL Arabic layout — left sidebar lists past chats; transcripts persist locally in SQLite across browser refreshes |
-| **Orchestration** | [LangGraph](https://langchain-ai.github.io/langgraph/) |
+| **Orchestration** | [LangGraph](https://langchain-ai.github.io/langgraph/) — `create_react_agent` (workflow-sandbox); 2-graph pipeline on `main` |
 
 ---
 
@@ -137,33 +146,38 @@ See `RESPONSE_WORKFLOW.md` L1–L22 for the locked decisions behind each step.
 .
 ├── README.md                             ✓
 ├── BUILD_SPEC.md                         ✓  Locked design decisions (§1–§10)
-├── RESPONSE_WORKFLOW.md                  ✓  Agentic-layer decisions (L1–L22)
+├── RESPONSE_WORKFLOW.md                  ✓  Old-pipeline decisions (L1–L22) — main branch
+├── docs/WORKFLOW_SANDBOX.md                   ✓  Tool-calling agent spec — this branch
 ├── SETUP.md                              ✓  Install + run instructions
 ├── CLAUDE.md                             ✓  Navigational map (for Claude Code sessions)
 ├── Capstone_Proposal_*.md                ✓  Original proposal (historical)
-├── config.yaml                           ✓  Backend-pluggable LLM config (L17)
+├── config.yaml                           ✓  Backend-pluggable LLM + agent + verifier config
 ├── Data/Books/                           ✓  Raw textbook PDFs (gitignored)
 ├── chroma/                               ✓  Persisted Chroma collections per grade
-├── logs/                                 ✓  Daily JSONL query records (L18; gitignored)
-├── prompts/                              ✓  6 Jinja prompt templates (L19), one per node
-├── scripts/                              ✓  smoke_run.py CLI (programmatic end-to-end)
+├── logs/                                 ✓  Daily JSONL query records (gitignored)
+├── prompts/                              ✓  2 Jinja templates: agent.j2 + verifier.j2
+├── scripts/                              ✓  smoke_run.py (programmatic agent end-to-end)
 ├── src/
 │   ├── retrieval/                        ✓  Jina-v4 embedder + Chroma client
-│   ├── ui/                               ✓  Chainlit app wired via astream_events (L21)
-│   ├── graph/                            ✓  LangGraph pipeline per RESPONSE_WORKFLOW L10
-│   │   ├── state.py / client.py          ✓  State types, LLMClient factory
-│   │   ├── prompts.py / logging.py       ✓  Jinja loader, @timed + log_query (L18)
-│   │   ├── inner.py / outer.py           ✓  Inner + outer graphs (L9)
-│   │   └── nodes/                        ✓  rewrite, decompose, intent, retrieve,
-│   │                                            self_check, generate, refuse, citations, chat
+│   ├── ui/                               ✓  Chainlit app — tool-call cards + token stream
+│   ├── graph/                            ✓  Tool-calling agent (WORKFLOW_SANDBOX §3)
+│   │   ├── state.py                      ✓  AgentState, Chunk, Citation, ToolCallRecord
+│   │   ├── client.py                     ✓  get_llm (+ for_agent=True) and get_verifier_llm
+│   │   ├── tools.py                      ✓  @tool retrieve(query) + per-request contextvars
+│   │   ├── agent.py                      ✓  create_react_agent + run_agent + finalize
+│   │   ├── verifier.py                   ✓  VerifierDecision + verify_topical
+│   │   ├── parse.py                      ✓  [n] parse + structural flags
+│   │   ├── prompts.py                    ✓  Jinja loader (render / render_pair)
+│   │   └── logging.py                    ✓  @timed + log_query (workflow-sandbox JSONL)
 │   └── ingest/                           ⬜  OCR + chunking pipeline (collaborator-owned)
-├── tests/                                ✓  pytest suite (61 tests, fake backend)
-└── eval/                                 ⬜  Smoke + benchmark eval sets
+├── tests/                                ✓  pytest suite (65 tests, fake backend)
+└── eval/                                 ⬜  Smoke + benchmark eval sets (§13 — out of scope)
 ```
 
-> **What's actually stubbed?** Only `src/graph/nodes/retrieve.py` — it
-> returns 3 hardcoded chunks until ingestion populates Chroma. Everything
-> else along the query path is built.
+> **What's actually stubbed?** Only `src/graph/tools.py`'s
+> `_STUB_CHUNKS` fallback — it returns 3 hardcoded chunks when the
+> grade's Chroma collection is empty (the test default). Everything
+> else along the agent path is built.
 
 ---
 
@@ -193,7 +207,7 @@ cp .env.example .env                                       # optional keys
 uv run python -m src.retrieval.init_chroma                 # create collections
 uv run python scripts/smoke_run.py "what is photosynthesis?"   # no UI, no API key
 (cd src/ui && PYTHONPATH=../.. uv run chainlit run app.py)     # browser UI at :8000
-uv run pytest                                              # 61 tests, ~1.5s
+uv run pytest                                              # 65 tests, ~4s
 ```
 
 Full step-by-step in [`SETUP.md`](SETUP.md), including how to switch

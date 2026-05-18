@@ -1,4 +1,4 @@
-"""Ceiling-hit refusal test (WORKFLOW_SANDBOX.md §3).
+"""Ceiling-hit refusal test (docs/WORKFLOW_SANDBOX.md §3).
 
 If the agent uses up its `max_tool_calls` budget without producing a
 final answer, `run_agent` catches `GraphRecursionError` and emits the

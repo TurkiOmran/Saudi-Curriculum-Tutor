@@ -5,7 +5,7 @@ the repo root.
 
 | Script             | What it does                                                                                                      |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `smoke_run.py`     | Programmatic end-to-end run of the outer graph — no Chainlit, no UI. Prints the merged answer + per-task debug.   |
+| `smoke_run.py`     | Programmatic end-to-end run of the workflow-sandbox agent — no Chainlit, no UI. Prints the final answer, tool calls, verifier verdict, citation flags, and latency. |
 | `ocr_probe.py`     | OCR-only probe over a PDF (no chunking, no Chroma writes). Cheap iteration tool for inspecting Mistral output.    |
 
 ## `smoke_run.py`
@@ -16,9 +16,12 @@ uv run python scripts/smoke_run.py "ما هي الدولة الأموية؟" \
     --subject social_studies
 ```
 
-Drives `outer_graph.ainvoke(...)` against the real pipeline. Useful for
-verifying the retrieve swap, prompt changes, or any node-level behavior
-without spinning up the UI.
+Drives `run_agent(...)` against the configured backend. Useful for
+verifying prompt changes, the verifier path, or the ceiling-refusal
+shape without spinning up the UI. Set `llm.backend: fake` in
+`config.yaml` for a zero-cost run (returns a canned answer with no
+tool calls); set `llm.backend: openrouter` + `OPENROUTER_API_KEY` in
+`.env` for a real tool-calling run.
 
 - `--grade` choices: `4 | 7 | 8 | 10`.
 - `--subject` defaults to `islamic_studies`; pass any of the five

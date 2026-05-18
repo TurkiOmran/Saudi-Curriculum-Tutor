@@ -2,7 +2,7 @@
 
 Replaces the two-graph TaskState / OuterState pair with a single
 `AgentState` that flows through `run_agent()` (`src/graph/agent.py`).
-Spec: WORKFLOW_SANDBOX.md §3 + §8.
+Spec: docs/WORKFLOW_SANDBOX.md §3 + §8.
 
 `Chunk` is preserved unchanged — it still mirrors the Chroma metadata
 contract in `src/retrieval/chroma_client.py:8-26` (OCR_implementation.md
@@ -99,7 +99,7 @@ class AgentState(TypedDict, total=False):
     refused: bool
     refusal_reason: str  # "off_topic" | "ceiling_hit" | "" when not refused
 
-    # Filled by the verifier (WORKFLOW_SANDBOX.md §4)
+    # Filled by the verifier (docs/WORKFLOW_SANDBOX.md §4)
     verifier_verdict: Literal["on_topic", "off_topic", "skipped"]
     verifier_reason: str
 

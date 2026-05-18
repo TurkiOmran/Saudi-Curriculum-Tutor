@@ -10,7 +10,7 @@ so each module has a single, narrow responsibility.
 | `retrieval/`   | Chroma client, Jina-v4 embedding function, collection setup script   | ✅ scaffolded |
 | `ui/`          | Chainlit app — grade picker, subject picker, message handlers        | ✅ scaffolded (stub handler) |
 | `ingest/`      | OCR (Mistral) + chunking pipeline → adds documents to Chroma         | ✅ scaffolded |
-| `graph/`       | LangGraph orchestration — rewrite, decompose, intent, retrieve, self-check, generate, refuse, citations (`RESPONSE_WORKFLOW.md` L9, L10) | ✅ scaffolded |
+| `graph/`       | Tool-calling agent + verifier + citation parse (`docs/docs/WORKFLOW_SANDBOX.md` §3). Replaces the old rewrite→decompose→intent→retrieve→self_check→generate pipeline. | ✅ workflow-sandbox |
 
 > The old `agent/` + `generation/` split is superseded. All query-path code lives in `graph/` per `RESPONSE_WORKFLOW.md` L10.
 

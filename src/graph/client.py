@@ -173,7 +173,7 @@ def get_llm(
 def get_verifier_llm(
     structured: type[T] | None = None,
 ) -> BaseChatModel | Runnable:
-    """Topical-verifier model (WORKFLOW_SANDBOX.md §4 / §8).
+    """Topical-verifier model (docs/WORKFLOW_SANDBOX.md §4 / §8).
 
     Defaults to `settings.llm.openrouter.model` when `settings.verifier.model`
     is empty (the conservative starting point on the OpenRouter free tier).

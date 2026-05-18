@@ -2,15 +2,21 @@
 
 How to get Aleem running on your machine from a fresh clone.
 
-> **Current build status:** The full agentic pipeline is **built and
-> tested** — rewrite → decompose → intent → retrieve → self-check →
-> (generate | refuse | chat) → citations → merge, all wired through
-> Chainlit with per-node streaming and JSONL query logging.
-> The only stub left is `retrieve()` — it returns 3 hardcoded
-> photosynthesis chunks (per L2) until the ingestion half lands. So
-> with `backend: fake` the whole graph runs end-to-end with **no API
-> key**; with `backend: openrouter` you get real Llama-3.3-70B answers
-> grounded in those 3 stub chunks.
+> **Current build status (workflow-sandbox branch):** The query path on
+> this branch is **one tool-calling agent + topical verifier** per
+> `docs/docs/WORKFLOW_SANDBOX.md`. `src/graph/agent.py::run_agent` drives a
+> `create_react_agent` whose only tool is `retrieve(query)`; the agent
+> writes inline `[n]` citations, a parser flags structural issues, and a
+> small structured-output LLM call checks topical relevance.
+> The only stub left is `retrieve()`'s fallback — it returns 3 hardcoded
+> photosynthesis chunks when the per-grade Chroma collection is empty
+> (the test default). So with `backend: fake` the whole agent runs
+> end-to-end with **no API key** (canned reply, no tool calls); with
+> `backend: openrouter` you get real tool-calling generation grounded
+> in those 3 stub chunks until ingestion populates Chroma.
+>
+> `main` still has the older multi-stage pipeline (L1–L22). Comparing
+> the two is the point of this branch (`docs/docs/WORKFLOW_SANDBOX.md` §12).
 
 ---
 
@@ -111,8 +117,9 @@ default `backend: fake` flow:
 
 ## 5. Choose your LLM backend (`config.yaml`)
 
-`config.yaml` lives at the repo root. The shape is locked in
-`RESPONSE_WORKFLOW.md` L17.
+`config.yaml` lives at the repo root. The base shape is locked in
+`RESPONSE_WORKFLOW.md` L17; the workflow-sandbox `agent:` and `verifier:`
+blocks are locked in `docs/docs/WORKFLOW_SANDBOX.md` §8.
 
 ```yaml
 llm:
@@ -122,13 +129,25 @@ llm:
     model: meta-llama/llama-3.3-70b-instruct
     base_url: https://openrouter.ai/api/v1
     # api key read from OPENROUTER_API_KEY in .env
+
+agent:
+  max_tool_calls: 4      # §3 ceiling on retrieve() calls per turn
+
+verifier:
+  enabled: true          # §4 — default-on topical-relevance check
+  model: ""              # empty → reuse llm.openrouter.model
+                         # set to a smaller / faster model id when available
 ```
 
 ### `backend: fake`  *(default, no API key needed)*
 
-Every LLM node short-circuits to a canned reply. The graph still runs
-end-to-end — you'll see the streaming `cl.Step` cascade, citations, the
-JSONL log line, etc. Great for UI work, demos, and the test suite.
+`get_llm(for_agent=True)` returns a tool-aware `FakeListChatModel`
+subclass whose canned reply has no tool calls — the agent loop
+terminates after one LLM call, producing a stub answer with zero
+retrieves. The verifier also short-circuits to `on_topic=True`. Great
+for UI work, demos, and the test suite. Test code that wants to
+exercise the full tool-call loop queues its own `AIMessage(tool_calls=…)`
+via `FakeMessagesListChatModel` — see `tests/test_agent.py`.
 
 ### `backend: openrouter` *(real LLM)*
 
@@ -143,8 +162,9 @@ JSONL log line, etc. Great for UI work, demos, and the test suite.
    - Smaller free models (`nvidia/nemotron-nano-9b-v2:free`,
      `openai/gpt-oss-20b:free`) are less throttled but weaker at
      structured output.
-4. The model **must** support tool-calling (L13). Verify against the live
-   list at <https://openrouter.ai/api/v1/models> — the free roster rotates.
+4. The model **must** support tool-calling (the agent binds the `retrieve`
+   tool via `bind_tools`). Verify against the live list at
+   <https://openrouter.ai/api/v1/models> — the free roster rotates.
 
 ### `backend: ollama`
 
@@ -178,13 +198,13 @@ Idempotent — safe to re-run.
 
 ## 7. Verify the install
 
-Two fast checks, no browser needed:
+Three fast checks, no browser needed:
 
 ```bash
-# (a) Run the pipeline end-to-end with the fake backend — no network.
+# (a) Run the agent end-to-end with the fake backend — no network.
 uv run python scripts/smoke_run.py "what is photosynthesis?"
 
-# (b) Run the test suite (~1.5s, 61 tests, all fake-backend).
+# (b) Run the test suite (~4s, 65 tests, all fake-backend).
 uv run pytest
 
 # (c) Lint check.
@@ -192,8 +212,10 @@ uv run ruff check src/ tests/ scripts/
 ```
 
 Both `pytest` and `ruff check` should report green. The smoke run prints
-the canned stub answer plus the per-task debug dict. With `backend:
-openrouter` the smoke run prints a real grounded answer.
+the canned stub answer, the (empty) tool-call list, the verifier verdict,
+and the latency dict. With `backend: openrouter` the smoke run drives the
+real agent, prints the verbatim search queries it made, and reports the
+verifier's verdict on the grounded answer.
 
 ---
 
@@ -209,23 +231,25 @@ subject in the ⚙ settings panel, then ask any question.
 
 ### What you see per query
 
-- A single status line at the top of the answer (e.g. `⏳ Detecting
-  intent…`) that **updates in place** as each node runs and **disappears**
-  once the final answer renders (ChatGPT / Claude.ai pattern, per L21).
-- Real answers stream token-by-token from the generate / chat nodes.
+- A single status line at the top of the answer that **updates in place**
+  as the agent runs: starts at `⏳ Thinking…`, then becomes
+  `🔎 Searching: "<verbatim query>"` for each retrieve call, and
+  **disappears** once the final answer renders (ChatGPT / Claude.ai
+  pattern).
+- Real answers stream token-by-token from the agent's chat-model node.
 - Citation cards (`[1]`, `[2]`, …) expand to show the source chunk's
   text, lesson title, and page.
-- Off-textbook questions hit the L1 refusal path:
-  `I couldn't find this in your textbook` / `لم أجد هذا في الكتاب المدرسي`
-  plus the top-3 related lesson titles.
-- Greetings / small talk / meta-questions hit the L22 chat path: friendly
-  bounded reply, no citations, no factual content.
+- Off-topic answers and ceiling-hit refusals replace the streamed text
+  with a warm, tutor-voiced refusal that suggests related topics drawn
+  from whatever chunks were retrieved (docs/WORKFLOW_SANDBOX.md §3).
+- Greetings / small talk: the agent simply doesn't call retrieve and
+  produces a short conversational reply.
 
 ### What you don't see
 
-Per-node `cl.Step` cards are deliberately gone (replaced by the single
-updating status line per L21 iteration). The full per-node trace lives
-in `logs/queries-$(date +%F).jsonl` — tail it in a separate terminal:
+The full per-turn trace — tool calls, citation flags, verifier verdict,
+latency breakdown — lives in `logs/queries-$(date +%F).jsonl`. Tail it
+in a separate terminal:
 
 ```bash
 tail -f logs/queries-$(date +%F).jsonl
@@ -268,7 +292,7 @@ uv run python scripts/smoke_run.py "your question here"
 
 # Tests
 uv run pytest                                        # full suite
-uv run pytest tests/test_intent.py                   # one file
+uv run pytest tests/test_agent.py                    # one file
 uv run pytest -vv -s                                 # verbose
 
 # Lint / format
@@ -317,12 +341,12 @@ throttling. Two fixes:
 That free endpoint was retired. Refresh the model id against
 <https://openrouter.ai/api/v1/models> and pick a currently-live one.
 
-**`Structured Output response does not have a 'parsed' field`** *(pipeline error in Chainlit)*
-A provider hiccup — the LLM returned an empty `tool_calls=[]` instead of
-a parsed schema. The pipeline now catches this per L20 and falls back
-to safe defaults (intent → qa or chat-heuristic; self_check → refuse).
-If you still see the error card, re-launch Chainlit so the latest code
-is loaded.
+**`Structured Output response does not have a 'parsed' field`** *(verifier path)*
+A provider hiccup — the LLM returned an empty structured-output payload.
+The verifier catches this in `src/graph/verifier.py` and falls back to
+`on_topic=True` with the error type in the `reason` field, so the answer
+still ships. If logs show this happening often, set `verifier.model` to a
+more reliable model id in `config.yaml`.
 
 **Chroma "missing embedding function on `get_collection`"**
 Don't call `client.get_collection(...)` directly. Use
@@ -347,7 +371,8 @@ make sure `HF_TOKEN` in your `.env` matches that account.
 | ------------------------------------- | ------------------------------------------ |
 | Understand the project pitch          | `README.md`                                |
 | Understand the locked design          | `BUILD_SPEC.md` (§1–§10)                   |
-| Understand the agentic-layer decisions | `RESPONSE_WORKFLOW.md` (L1–L22)           |
+| Understand the agentic-layer decisions (`main`) | `RESPONSE_WORKFLOW.md` (L1–L22) |
+| Understand the workflow-sandbox shape | `docs/docs/WORKFLOW_SANDBOX.md`                      |
 | Navigate the codebase (for Claude)    | `CLAUDE.md`                                |
 | Work inside the retrieval layer       | `src/retrieval/README.md`                  |
 | Work inside the agentic graph         | `src/graph/README.md`                      |

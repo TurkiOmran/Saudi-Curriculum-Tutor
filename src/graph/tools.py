@@ -1,6 +1,6 @@
 """Agent tools — workflow-sandbox `@tool retrieve(query)`.
 
-WORKFLOW_SANDBOX.md §3: the agent has exactly one tool, `retrieve(query)`.
+docs/WORKFLOW_SANDBOX.md §3: the agent has exactly one tool, `retrieve(query)`.
 It calls Chroma (top-20) → Jina reranker (top-5) and returns a string the
 LLM can read directly. Rerank scores are included so the agent can judge
 chunk quality and re-query or refuse (§4 "gradient signal").

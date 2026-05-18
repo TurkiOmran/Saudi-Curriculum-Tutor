@@ -1,4 +1,4 @@
-"""Workflow-sandbox tool-calling agent (WORKFLOW_SANDBOX.md §3).
+"""Workflow-sandbox tool-calling agent (docs/WORKFLOW_SANDBOX.md §3).
 
 One `create_react_agent` + one tool (`retrieve`) + two post-hoc safety
 layers (citation parse in `parse.py`, topical verifier in `verifier.py`).

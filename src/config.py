@@ -73,14 +73,14 @@ class IngestionConfig:
 
 @dataclass(frozen=True)
 class AgentConfig:
-    """Workflow-sandbox tool-calling agent knobs (WORKFLOW_SANDBOX.md §8)."""
+    """Workflow-sandbox tool-calling agent knobs (docs/WORKFLOW_SANDBOX.md §8)."""
 
     max_tool_calls: int   # §3 hard ceiling on retrieve calls per turn
 
 
 @dataclass(frozen=True)
 class VerifierConfig:
-    """Topical verifier knobs (WORKFLOW_SANDBOX.md §4 / §8)."""
+    """Topical verifier knobs (docs/WORKFLOW_SANDBOX.md §4 / §8)."""
 
     enabled: bool
     # Empty string means "reuse llm.openrouter.model" — the safe default for the

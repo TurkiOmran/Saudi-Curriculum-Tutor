@@ -1,6 +1,6 @@
 # Aleem — workflow-sandbox configuration.
 # Shape locked in RESPONSE_WORKFLOW.md L17 (base fields) and
-# WORKFLOW_SANDBOX.md §8 (agent + verifier blocks). Secrets (API keys) live
+# docs/WORKFLOW_SANDBOX.md §8 (agent + verifier blocks). Secrets (API keys) live
 # in .env, NOT here.
 
 llm:
@@ -54,12 +54,12 @@ ingestion:
   annotate_images: true  # D5/D7 — pass bbox_annotation_format so figures
                          #          become retrievable as [Image: <annotation>]
 
-# Workflow-sandbox tool-calling agent (WORKFLOW_SANDBOX.md §8).
+# Workflow-sandbox tool-calling agent (docs/WORKFLOW_SANDBOX.md §8).
 agent:
   max_tool_calls: 4   # §3 ceiling. On hit → refuse with §3 shape using
                       # already-retrieved chunks.
 
-# Topical verifier (WORKFLOW_SANDBOX.md §4 / §8).
+# Topical verifier (docs/WORKFLOW_SANDBOX.md §4 / §8).
 verifier:
   enabled: true       # §4 — default-on safety layer 3
   model: ""           # empty → reuse llm.openrouter.model. Override with a
