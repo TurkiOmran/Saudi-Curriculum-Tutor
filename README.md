@@ -75,7 +75,7 @@ See `RESPONSE_WORKFLOW.md` L1–L22 for the locked decisions behind each step.
 | **Vector store** | [Chroma](https://www.trychroma.com/) — one collection per grade (4, 7, 8, 10) |
 | **Reranker** | [jina-reranker-v2-base-multilingual](https://huggingface.co/jinaai/jina-reranker-v2-base-multilingual) — cross-encoder rerank over Chroma top-K |
 | **Generator** | [ALLaM-7B-Instruct-preview](https://huggingface.co/humain-ai/ALLaM-7B-Instruct-preview) — the Saudi national LLM |
-| **UI** | [Chainlit](https://chainlit.io/) with RTL Arabic layout |
+| **UI** | [Chainlit](https://chainlit.io/) with RTL Arabic layout — left sidebar lists past chats; transcripts persist locally in SQLite across browser refreshes |
 | **Orchestration** | [LangGraph](https://langchain-ai.github.io/langgraph/) |
 
 ---
