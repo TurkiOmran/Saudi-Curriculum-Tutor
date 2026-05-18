@@ -33,11 +33,11 @@ This forces students to second-guess every answer and risks them memorizing cont
 
 ---
 
-## Architecture (workflow-sandbox)
+## Architecture
 
-Aleem on the `workflow-sandbox` branch uses **one tool-calling agent +
-one tool + two post-hoc safety layers**. The shape is locked in
-`docs/docs/WORKFLOW_SANDBOX.md`.
+Aleem uses **one tool-calling agent + one tool + two post-hoc safety
+layers**. The shape is locked in `docs/WORKFLOW_SANDBOX.md` (merged from
+`workflow-sandbox` in commit `f20595a`).
 
 ```
 User request + grade + subject (Chainlit ChatProfile)  +  chat history
@@ -68,10 +68,10 @@ L18 JSONL log: tool calls, citation flags, verifier verdict,
                rerank scores, latency
 ```
 
-See `docs/docs/WORKFLOW_SANDBOX.md` (§3 diagram, §4 safety model, §12 eval bar) for
+See `docs/WORKFLOW_SANDBOX.md` (§3 diagram, §4 safety model, §12 eval bar) for
 the full design. `RESPONSE_WORKFLOW.md` (L1–L22) describes the older
-multi-stage pipeline that lives on `main` — that's the comparison
-baseline for the sandbox's merge decision.
+multi-stage pipeline that motivated the new shape — preserved as the
+historical comparison baseline.
 
 ---
 
@@ -85,7 +85,7 @@ baseline for the sandbox's merge decision.
 | **Reranker** | [jina-reranker-v2-base-multilingual](https://huggingface.co/jinaai/jina-reranker-v2-base-multilingual) — cross-encoder rerank over Chroma top-K |
 | **Generator** | [ALLaM-7B-Instruct-preview](https://huggingface.co/humain-ai/ALLaM-7B-Instruct-preview) — the Saudi national LLM |
 | **UI** | [Chainlit](https://chainlit.io/) with RTL Arabic layout — left sidebar lists past chats; transcripts persist locally in SQLite across browser refreshes |
-| **Orchestration** | [LangGraph](https://langchain-ai.github.io/langgraph/) — `create_react_agent` (workflow-sandbox); 2-graph pipeline on `main` |
+| **Orchestration** | [LangGraph](https://langchain-ai.github.io/langgraph/) — `create_react_agent`; `RESPONSE_WORKFLOW.md` preserves the earlier 2-graph design |
 
 ---
 
@@ -146,10 +146,10 @@ baseline for the sandbox's merge decision.
 .
 ├── README.md                             ✓
 ├── BUILD_SPEC.md                         ✓  Locked design decisions (§1–§10)
-├── RESPONSE_WORKFLOW.md                  ✓  Old-pipeline decisions (L1–L22) — main branch
-├── docs/WORKFLOW_SANDBOX.md                   ✓  Tool-calling agent spec — this branch
+├── RESPONSE_WORKFLOW.md                  ✓  Historical pipeline decisions (L1–L22)
+├── docs/WORKFLOW_SANDBOX.md              ✓  Current tool-calling agent spec
 ├── SETUP.md                              ✓  Install + run instructions
-├── CLAUDE.md                             ✓  Navigational map (for Claude Code sessions)
+├── AGENTS.md (CLAUDE.md → AGENTS.md)     ✓  Navigational map (for Claude Code sessions)
 ├── Capstone_Proposal_*.md                ✓  Original proposal (historical)
 ├── config.yaml                           ✓  Backend-pluggable LLM + agent + verifier config
 ├── Data/Books/                           ✓  Raw textbook PDFs (gitignored)
@@ -168,10 +168,9 @@ baseline for the sandbox's merge decision.
 │   │   ├── verifier.py                   ✓  VerifierDecision + verify_topical
 │   │   ├── parse.py                      ✓  [n] parse + structural flags
 │   │   ├── prompts.py                    ✓  Jinja loader (render / render_pair)
-│   │   └── logging.py                    ✓  @timed + log_query (workflow-sandbox JSONL)
-│   └── ingest/                           ⬜  OCR + chunking pipeline (collaborator-owned)
-├── tests/                                ✓  pytest suite (65 tests, fake backend)
-└── eval/                                 ⬜  Smoke + benchmark eval sets (§13 — out of scope)
+│   │   └── logging.py                    ✓  @timed + log_query (JSONL)
+│   └── ingest/                           ✓  OCR + chunking pipeline (collaborator-owned)
+└── tests/                                ✓  pytest suite (65 tests, fake backend)
 ```
 
 > **What's actually stubbed?** Only `src/graph/tools.py`'s
@@ -183,12 +182,13 @@ baseline for the sandbox's merge decision.
 
 ## Getting Started
 
-> **Status:** The full agentic query path (rewrite → decompose → intent →
-> retrieve → self-check → (generate | refuse | chat) → citations → merge)
-> is built and tested. The only stub left is `retrieve()` — it returns 3
-> hardcoded chunks until ingestion populates Chroma. So you can run the
-> entire pipeline end-to-end today with **no API key** (`backend: fake`)
-> or with a real LLM (`backend: openrouter`, ~$0.001 per query).
+> **Status:** The tool-calling agent path (agent loop → retrieve →
+> citation parse → topical verifier) is built and tested. The only stub
+> left is `retrieve()`'s fallback — it returns 3 hardcoded chunks when
+> the per-grade Chroma collection is empty. So you can run the entire
+> pipeline end-to-end today with **no API key** (`backend: fake`, the
+> shipped default in `config.yaml`) or with a real LLM (`backend:
+> openrouter`, ~$0.001 per query).
 
 ### Prerequisites
 

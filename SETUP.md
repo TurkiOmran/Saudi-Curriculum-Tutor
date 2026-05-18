@@ -2,21 +2,21 @@
 
 How to get Aleem running on your machine from a fresh clone.
 
-> **Current build status (workflow-sandbox branch):** The query path on
-> this branch is **one tool-calling agent + topical verifier** per
-> `docs/docs/WORKFLOW_SANDBOX.md`. `src/graph/agent.py::run_agent` drives a
-> `create_react_agent` whose only tool is `retrieve(query)`; the agent
-> writes inline `[n]` citations, a parser flags structural issues, and a
-> small structured-output LLM call checks topical relevance.
+> **Current build status:** The query path is **one tool-calling agent +
+> topical verifier** per `docs/WORKFLOW_SANDBOX.md`.
+> `src/graph/agent.py::run_agent` drives a `create_react_agent` whose
+> only tool is `retrieve(query)`; the agent writes inline `[n]`
+> citations, a parser flags structural issues, and a small
+> structured-output LLM call checks topical relevance.
 > The only stub left is `retrieve()`'s fallback — it returns 3 hardcoded
 > photosynthesis chunks when the per-grade Chroma collection is empty
-> (the test default). So with `backend: fake` the whole agent runs
-> end-to-end with **no API key** (canned reply, no tool calls); with
-> `backend: openrouter` you get real tool-calling generation grounded
-> in those 3 stub chunks until ingestion populates Chroma.
+> (the test default). So with `backend: fake` (the shipped default) the
+> whole agent runs end-to-end with **no API key** (canned reply, no tool
+> calls); with `backend: openrouter` you get real tool-calling generation
+> grounded in those 3 stub chunks until ingestion populates Chroma.
 >
-> `main` still has the older multi-stage pipeline (L1–L22). Comparing
-> the two is the point of this branch (`docs/docs/WORKFLOW_SANDBOX.md` §12).
+> `RESPONSE_WORKFLOW.md` (L1–L22) is preserved as the historical
+> comparison baseline (`docs/WORKFLOW_SANDBOX.md` §12).
 
 ---
 
@@ -118,8 +118,8 @@ default `backend: fake` flow:
 ## 5. Choose your LLM backend (`config.yaml`)
 
 `config.yaml` lives at the repo root. The base shape is locked in
-`RESPONSE_WORKFLOW.md` L17; the workflow-sandbox `agent:` and `verifier:`
-blocks are locked in `docs/docs/WORKFLOW_SANDBOX.md` §8.
+`RESPONSE_WORKFLOW.md` L17; the `agent:` and `verifier:` blocks are
+locked in `docs/WORKFLOW_SANDBOX.md` §8.
 
 ```yaml
 llm:
@@ -188,8 +188,9 @@ Expected output:
 HH:MM:SS  INFO  chroma dir: /…/Aleem/chroma
 HH:MM:SS  INFO  grade_4   created  (count=0)
 HH:MM:SS  INFO  grade_7   created  (count=0)
+HH:MM:SS  INFO  grade_8   created  (count=0)
 HH:MM:SS  INFO  grade_10  created  (count=0)
-HH:MM:SS  INFO  done — 3 collections ready
+HH:MM:SS  INFO  done — 4 collections ready
 ```
 
 Idempotent — safe to re-run.
@@ -371,8 +372,8 @@ make sure `HF_TOKEN` in your `.env` matches that account.
 | ------------------------------------- | ------------------------------------------ |
 | Understand the project pitch          | `README.md`                                |
 | Understand the locked design          | `BUILD_SPEC.md` (§1–§10)                   |
-| Understand the agentic-layer decisions (`main`) | `RESPONSE_WORKFLOW.md` (L1–L22) |
-| Understand the workflow-sandbox shape | `docs/docs/WORKFLOW_SANDBOX.md`                      |
+| Understand the historical agentic-layer decisions | `RESPONSE_WORKFLOW.md` (L1–L22) |
+| Understand the current agent shape    | `docs/WORKFLOW_SANDBOX.md`                 |
 | Navigate the codebase (for Claude)    | `CLAUDE.md`                                |
 | Work inside the retrieval layer       | `src/retrieval/README.md`                  |
 | Work inside the agentic graph         | `src/graph/README.md`                      |

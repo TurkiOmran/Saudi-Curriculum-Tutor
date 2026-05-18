@@ -1,12 +1,11 @@
 # Response Workflow — Agentic + Generation Layer
 
-> **Sandbox status (workflow-sandbox branch only):** The two-graph pipeline
-> described in L1–L22 below is currently being A/B'd against a single
-> tool-calling agent. The replacement spec lives in `docs/docs/WORKFLOW_SANDBOX.md`
-> (§3 diagram, §4 safety model, §12 eval bar). On the `workflow-sandbox`
-> branch, `src/graph/` implements the agent shape; the L-decisions below
-> describe what's on `main`. Merge decision is gated on eval (§12) — this
-> file stays as the comparison baseline either way.
+> **Historical (pre-merge) document.** The two-graph pipeline described in
+> L1–L22 below was superseded when `workflow-sandbox` merged into `main`
+> (commit `f20595a`). The shipping shape is a single tool-calling agent
+> per `docs/WORKFLOW_SANDBOX.md` (§3 diagram, §4 safety model, §12 eval bar).
+> This file is preserved as the design history for the L-decisions and as
+> the comparison baseline that motivated the new shape.
 
 Working notes for the LLM/agentic half of Aleem (decomposition → intent → self-check → generation → citations).
 Owner: Turki. Embedding/retrieval layer: collaborator.

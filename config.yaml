@@ -8,7 +8,7 @@ llm:
   # - "fake" returns canned strings — lets the graph run end-to-end with no
   #   API key (Phase A milestone per L10). Switch to "openrouter" once you
   #   have OPENROUTER_API_KEY in .env.
-  backend: openrouter
+  backend: fake
 
   openrouter:
     # NOTE: model MUST support function/tool calling for structured outputs

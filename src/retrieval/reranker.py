@@ -4,8 +4,9 @@ Same lazy-load pattern as `embeddings.py`: instantiating the class costs
 nothing; the model is loaded on the first `rerank(...)` call. Singletons
 across the process so the model isn't reloaded per request.
 
-Used by `src/graph/nodes/retrieve.py` to rescore Chroma's top-K against
-the query before handing the final top-N to downstream nodes.
+Used by `src/graph/tools.py` (the agent's `retrieve` tool) to rescore
+Chroma's top-K against the query before returning the final top-N to
+the agent.
 """
 
 from __future__ import annotations

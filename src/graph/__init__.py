@@ -1,6 +1,6 @@
-"""Aleem agentic graph — workflow-sandbox tool-calling agent.
+"""Aleem agentic graph — tool-calling agent.
 
-Decisions live in `docs/docs/WORKFLOW_SANDBOX.md`. See `src/graph/README.md` for
+Decisions live in `docs/WORKFLOW_SANDBOX.md`. See `src/graph/README.md` for
 the file-by-file map.
 """
 

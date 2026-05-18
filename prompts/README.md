@@ -1,7 +1,7 @@
-# `prompts/` — Jinja2 prompt templates (workflow-sandbox)
+# `prompts/` — Jinja2 prompt templates
 
-Two templates on this branch. The §1 collapse of intent / self_check /
-decompose / rewrite / generate / chat into one agent (`docs/docs/WORKFLOW_SANDBOX.md`)
+Two templates. The §1 collapse of intent / self_check / decompose /
+rewrite / generate / chat into one agent (`docs/WORKFLOW_SANDBOX.md`)
 collapses six prompts into one.
 
 ## Files

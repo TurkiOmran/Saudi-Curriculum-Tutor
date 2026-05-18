@@ -1,4 +1,4 @@
-# `src/ui/` — Chainlit application (workflow-sandbox)
+# `src/ui/` — Chainlit application
 
 The student-facing UI, wired to the tool-calling agent in
 `src/graph/agent.py`. Streams the agent's tool calls as ephemeral

@@ -74,4 +74,4 @@ The `.md` files are raw (pre-cleanup) on purpose — the cleaned text with
 
 - Embedding model itself — `src/retrieval/embeddings.py`.
 - Chroma collection helpers — `src/retrieval/chroma_client.py`.
-- The query path that consumes these chunks — `src/graph/nodes/retrieve.py`.
+- The query path that consumes these chunks — `src/graph/tools.py` (the agent's `retrieve` tool).

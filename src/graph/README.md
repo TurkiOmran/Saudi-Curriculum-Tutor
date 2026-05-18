@@ -1,12 +1,13 @@
-# `src/graph/` — workflow-sandbox tool-calling agent
+# `src/graph/` — tool-calling agent
 
-The agentic half of Aleem on the `workflow-sandbox` branch. Replaces the
-two-graph LangGraph pipeline from `main` (rewrite → decompose → map(intent
-→ retrieve → self_check → (generate | refuse) → citations) → merge) with
-**one tool-calling agent + one tool + two post-hoc safety layers**.
+The agentic half of Aleem. Replaces the earlier two-graph LangGraph
+pipeline (rewrite → decompose → map(intent → retrieve → self_check →
+(generate | refuse) → citations) → merge) with **one tool-calling agent
++ one tool + two post-hoc safety layers**.
 
-Spec: `docs/docs/WORKFLOW_SANDBOX.md` (§1–§13). The branch is the toggle (§8) —
-shipping merges this directory wholesale over `main`'s `src/graph/`.
+Spec: `docs/WORKFLOW_SANDBOX.md` (§1–§13). Merged from `workflow-sandbox`
+in commit `f20595a`; `RESPONSE_WORKFLOW.md` (L1–L22) is the historical
+baseline.
 
 ## Files
 

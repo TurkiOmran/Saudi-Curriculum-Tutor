@@ -1,4 +1,4 @@
-"""Agent tools — workflow-sandbox `@tool retrieve(query)`.
+"""Agent tools — `@tool retrieve(query)`.
 
 docs/WORKFLOW_SANDBOX.md §3: the agent has exactly one tool, `retrieve(query)`.
 It calls Chroma (top-20) → Jina reranker (top-5) and returns a string the

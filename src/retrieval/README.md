@@ -1,7 +1,7 @@
 # `src/retrieval/` — embeddings + Chroma client
 
 Owns everything between the Jina-v4 embedding model and the persisted
-Chroma store. Other modules (`ingest/`, `agent/`, `ui/`) talk to Chroma
+Chroma store. Other modules (`ingest/`, `graph/`, `ui/`) talk to Chroma
 *only* through helpers in this folder.
 
 ## Files
@@ -75,4 +75,4 @@ col.add(
 ## Not here
 
 - OCR / parsing / chunking — `src/ingest/`.
-- Generation, prompts, self-check — `src/graph/nodes/` (per `RESPONSE_WORKFLOW.md` L10).
+- Agent loop, prompts, verifier — `src/graph/` (see `src/graph/README.md`).

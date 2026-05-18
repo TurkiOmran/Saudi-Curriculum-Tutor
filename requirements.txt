@@ -12,6 +12,8 @@ aiohttp==3.13.5
     # via traceloop-sdk
 aiosignal==1.4.0
     # via aiohttp
+aiosqlite==0.20.0
+    # via aleem
 annotated-doc==0.0.4
     # via
     #   fastapi
@@ -83,6 +85,8 @@ durationpy==0.10
     # via kubernetes
 einops==0.8.2
     # via aleem
+eval-type-backport==0.3.1
+    # via mistralai
 fastapi==0.136.1
     # via chainlit
 filelock==3.29.0
@@ -106,6 +110,10 @@ googleapis-common-protos==1.75.0
     # via
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
+greenlet==3.1.1
+    # via
+    #   aleem
+    #   sqlalchemy
 grpcio==1.80.0
     # via
     #   chromadb
@@ -129,6 +137,7 @@ httpx==0.28.1
     #   langsmith
     #   literalai
     #   mcp
+    #   mistralai
     #   openai
 httpx-sse==0.4.3
     # via mcp
@@ -161,6 +170,8 @@ jiter==0.14.0
     # via openai
 jsonpatch==1.33
     # via langchain-core
+jsonpath-python==1.1.6
+    # via mistralai
 jsonpointer==3.1.1
     # via jsonpatch
 jsonschema==4.26.0
@@ -208,6 +219,8 @@ mcp==1.27.1
     # via chainlit
 mdurl==0.1.2
     # via markdown-it-py
+mistralai==2.4.5
+    # via aleem
 mmh3==5.2.1
     # via chromadb
 mpmath==1.3.0
@@ -228,6 +241,7 @@ numpy==2.4.4
     #   chromadb
     #   onnxruntime
     #   peft
+    #   torchvision
     #   transformers
 nvidia-cublas-cu12==12.6.4.1 ; platform_machine == 'x86_64' and sys_platform == 'linux'
     # via
@@ -272,9 +286,10 @@ onnxruntime==1.26.0
     # via chromadb
 openai==2.36.0
     # via langchain-openai
-opentelemetry-api==1.41.1
+opentelemetry-api==1.39.1
     # via
     #   chromadb
+    #   mistralai
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-instrumentation
@@ -318,17 +333,17 @@ opentelemetry-api==1.41.1
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
     #   traceloop-sdk
-opentelemetry-exporter-otlp-proto-common==1.41.1
+opentelemetry-exporter-otlp-proto-common==1.39.1
     # via
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-exporter-otlp-proto-grpc==1.41.1
+opentelemetry-exporter-otlp-proto-grpc==1.39.1
     # via
     #   chromadb
     #   traceloop-sdk
-opentelemetry-exporter-otlp-proto-http==1.41.1
+opentelemetry-exporter-otlp-proto-http==1.39.1
     # via traceloop-sdk
-opentelemetry-instrumentation==0.62b1
+opentelemetry-instrumentation==0.60b1
     # via
     #   opentelemetry-instrumentation-agno
     #   opentelemetry-instrumentation-alephalpha
@@ -393,7 +408,7 @@ opentelemetry-instrumentation-langchain==0.60.0
     # via traceloop-sdk
 opentelemetry-instrumentation-llamaindex==0.60.0
     # via traceloop-sdk
-opentelemetry-instrumentation-logging==0.62b1
+opentelemetry-instrumentation-logging==0.60b1
     # via traceloop-sdk
 opentelemetry-instrumentation-marqo==0.60.0
     # via traceloop-sdk
@@ -413,23 +428,23 @@ opentelemetry-instrumentation-pinecone==0.60.0
     # via traceloop-sdk
 opentelemetry-instrumentation-qdrant==0.60.0
     # via traceloop-sdk
-opentelemetry-instrumentation-redis==0.62b1
+opentelemetry-instrumentation-redis==0.60b1
     # via traceloop-sdk
 opentelemetry-instrumentation-replicate==0.60.0
     # via traceloop-sdk
-opentelemetry-instrumentation-requests==0.62b1
+opentelemetry-instrumentation-requests==0.60b1
     # via traceloop-sdk
 opentelemetry-instrumentation-sagemaker==0.60.0
     # via traceloop-sdk
-opentelemetry-instrumentation-sqlalchemy==0.62b1
+opentelemetry-instrumentation-sqlalchemy==0.60b1
     # via traceloop-sdk
-opentelemetry-instrumentation-threading==0.62b1
+opentelemetry-instrumentation-threading==0.60b1
     # via traceloop-sdk
 opentelemetry-instrumentation-together==0.60.0
     # via traceloop-sdk
 opentelemetry-instrumentation-transformers==0.60.0
     # via traceloop-sdk
-opentelemetry-instrumentation-urllib3==0.62b1
+opentelemetry-instrumentation-urllib3==0.60b1
     # via traceloop-sdk
 opentelemetry-instrumentation-vertexai==0.60.0
     # via traceloop-sdk
@@ -441,20 +456,21 @@ opentelemetry-instrumentation-weaviate==0.60.0
     # via traceloop-sdk
 opentelemetry-instrumentation-writer==0.60.0
     # via traceloop-sdk
-opentelemetry-proto==1.41.1
+opentelemetry-proto==1.39.1
     # via
     #   opentelemetry-exporter-otlp-proto-common
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-sdk==1.41.1
+opentelemetry-sdk==1.39.1
     # via
     #   chromadb
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-semantic-conventions-ai
     #   traceloop-sdk
-opentelemetry-semantic-conventions==0.62b1
+opentelemetry-semantic-conventions==0.60b1
     # via
+    #   mistralai
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-agno
     #   opentelemetry-instrumentation-alephalpha
@@ -527,7 +543,7 @@ opentelemetry-semantic-conventions-ai==0.5.1
     #   opentelemetry-instrumentation-weaviate
     #   opentelemetry-instrumentation-writer
     #   traceloop-sdk
-opentelemetry-util-http==0.62b1
+opentelemetry-util-http==0.60b1
     # via
     #   opentelemetry-instrumentation-requests
     #   opentelemetry-instrumentation-urllib3
@@ -559,7 +575,9 @@ packaging==26.2
 peft==0.17.1
     # via aleem
 pillow==12.2.0
-    # via aleem
+    # via
+    #   aleem
+    #   torchvision
 pluggy==1.6.0
     # via pytest
 propcache==0.5.2
@@ -589,6 +607,7 @@ pydantic==2.13.4
     #   langsmith
     #   literalai
     #   mcp
+    #   mistralai
     #   openai
     #   pydantic-settings
     #   traceloop-sdk
@@ -615,7 +634,9 @@ pytest==9.0.3
     # via pytest-asyncio
 pytest-asyncio==1.3.0
 python-dateutil==2.9.0.post0
-    # via kubernetes
+    # via
+    #   kubernetes
+    #   mistralai
 python-dotenv==1.2.2
     # via
     #   aleem
@@ -695,6 +716,8 @@ sniffio==1.3.1
     # via
     #   asyncer
     #   openai
+sqlalchemy==2.0.36
+    # via aleem
 sse-starlette==3.4.4
     # via mcp
 starlette==1.0.0
@@ -726,6 +749,9 @@ torch==2.7.1
     #   accelerate
     #   aleem
     #   peft
+    #   torchvision
+torchvision==0.22.1
+    # via aleem
 tqdm==4.67.3
     # via
     #   chromadb
@@ -746,6 +772,7 @@ typer==0.25.1
 typing-extensions==4.15.0
     # via
     #   aiosignal
+    #   aiosqlite
     #   anyio
     #   asyncer
     #   chromadb
@@ -765,6 +792,7 @@ typing-extensions==4.15.0
     #   pydantic-core
     #   pytest-asyncio
     #   referencing
+    #   sqlalchemy
     #   starlette
     #   torch
     #   typing-inspect
@@ -775,6 +803,7 @@ typing-inspection==0.4.2
     # via
     #   fastapi
     #   mcp
+    #   mistralai
     #   pydantic
     #   pydantic-settings
 urllib3==2.7.0
@@ -800,7 +829,7 @@ websocket-client==1.9.0
     # via kubernetes
 websockets==16.0
     # via uvicorn
-wrapt==2.1.2
+wrapt==1.17.3
     # via
     #   deprecated
     #   opentelemetry-instrumentation

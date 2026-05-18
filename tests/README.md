@@ -1,4 +1,4 @@
-# `tests/` — pytest suite (workflow-sandbox)
+# `tests/` — pytest suite
 
 Critical-path coverage for the tool-calling agent and the ingest pipeline.
 **All tests run against `backend=fake` and a mocked Mistral client** — no
