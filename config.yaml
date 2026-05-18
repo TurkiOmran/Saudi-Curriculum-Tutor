@@ -1,6 +1,7 @@
-# Aleem — agentic-pipeline configuration.
-# Shape locked in RESPONSE_WORKFLOW.md L17. Secrets (API keys) live in .env,
-# NOT here.
+# Aleem — workflow-sandbox configuration.
+# Shape locked in RESPONSE_WORKFLOW.md L17 (base fields) and
+# WORKFLOW_SANDBOX.md §8 (agent + verifier blocks). Secrets (API keys) live
+# in .env, NOT here.
 
 llm:
   # backend: fake | openrouter | ollama   (one at a time)
@@ -17,7 +18,7 @@ llm:
     #   qwen/qwen3-next-80b-a3b-instruct:free   (best Arabic of free tier)
     #   openai/gpt-oss-120b:free                (largest free, slower)
     #   google/gemma-4-31b-it:free              (mid-size, English-leaning)
-    model: meta-llama/llama-3.3-70b-instruct
+    model: google/gemini-3-flash-preview
     base_url: https://openrouter.ai/api/v1
     # api key read from OPENROUTER_API_KEY in .env
 
@@ -52,3 +53,14 @@ ingestion:
   embed_batch_size: 16   # lower to 8 on small GPUs (D11)
   annotate_images: true  # D5/D7 — pass bbox_annotation_format so figures
                          #          become retrievable as [Image: <annotation>]
+
+# Workflow-sandbox tool-calling agent (WORKFLOW_SANDBOX.md §8).
+agent:
+  max_tool_calls: 4   # §3 ceiling. On hit → refuse with §3 shape using
+                      # already-retrieved chunks.
+
+# Topical verifier (WORKFLOW_SANDBOX.md §4 / §8).
+verifier:
+  enabled: true       # §4 — default-on safety layer 3
+  model: ""           # empty → reuse llm.openrouter.model. Override with a
+                      # smaller / faster model id when you have one.
