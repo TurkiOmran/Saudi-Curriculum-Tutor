@@ -1,0 +1,87 @@
+{
+  "pages": [
+    {
+      "index": 0,
+      "markdown": "0000000\n\nقررت وزارة التعليم تدريس\n\nهذا الكتاب وطبعه على نفقتها\n\nوزارة التعليم\n\nMinistry of Education\n\n0000000\n\n# الدراسات الاجتماعية\n\n## الصف الثاني المتوسط\n\nقام بالتأليف والمراجعة\n\nفريق من المتخصصين\n\n![img-0.jpeg](img-0.jpeg)\n\nيوزع مجاناً ولا يُباح\n\nوزارة التعليم\n\nMinistry of Education\n\n2025 - 1447",
+      "images": [
+        {
+          "id": "img-0.jpeg",
+          "top_left_x": 116,
+          "top_left_y": 672,
+          "bottom_right_x": 697,
+          "bottom_right_y": 834,
+          "image_base64": null,
+          "image_annotation": "{\n  \"description\": \"Three dotted lines with Arabic labels for the first line, second line, and third line.\",\n  \"kind\": \"diagram\"\n}"
+        }
+      ],
+      "dimensions": {
+        "dpi": 96,
+        "height": 1020,
+        "width": 850
+      },
+      "tables": [],
+      "hyperlinks": [],
+      "header": null,
+      "footer": null,
+      "confidence_scores": null
+    },
+    {
+      "index": 1,
+      "markdown": "المركز الوطني للمناهج ١٤٤٦هـ\n\nالمركز الوطني للمناهج\n\nالدراسات الاجتماعية - الصف الثاني - المرحلة المتوسطة - غير مجزأ. /\n\nالمركز الوطني للمناهج - الرياض، ١٤٤٦هـ\n\nص: ٢١٢ / ٢٥,٥ × ١٣ سم\n\nرقم الإيداع : ١٥٢٥٢/١\n\nردمك : ٩٧٨-٦٠٣-٨٥٢٧-١٠-٨\n\n![img-1.jpeg](img-1.jpeg)\n\n# مجلس الشورى بالمملكة العربية السعودية\n\n![img-2.jpeg](img-2.jpeg)\n\n# الرسوم\n\nأدارة الملك عبد العزيز\n\nطابع هذا الكتاب لأغراض التعليم، ولا يحق نسخ أي جزء منه أو استعماله أو استعمال الرسوم، أو الصور، أو الخرائط، أو المحتوى بأي شكل من الأشكال، أو بأي وسيلة من الوسائل التصويرية، أو الإلكترونية، أو الميكانيكية، أو غيرها مما يستحدث مستقبلاً إلا بإذن من الناشر.\n\n# مواد إثرائية وداعمة على \"منصة عين الإثرائية\"\n\n![img-3.jpeg](img-3.jpeg)\n\nien.edu.sa\n\nأعزاءنا المعلمين والمعلمات، والطلاب والطالبات، وأولياء الأمور، وكل مهتم بالتربية والتعليم:\n\nيسعدنا تواصلكم: لتطوير الكتاب المدرسي، ومقترحاتكم محل اهتمامنا.\n\n![img-4.jpeg](img-4.jpeg)\n\nfb.ien.edu.sa\n\nوزارة التعليم\n\nMinistry of Education\n\n2025 - 1447",
+      "images": [
+        {
+          "id": "img-1.jpeg",
+          "top_left_x": 532,
+          "top_left_y": 365,
+          "bottom_right_x": 742,
+          "bottom_right_y": 466,
+          "image_base64": null,
+          "image_annotation": "{\n  \"description\": \"A photo of a large conference room with people seated around a circular table, engaged in a meeting.\",\n  \"kind\": \"photo\"\n}"
+        },
+        {
+          "id": "img-2.jpeg",
+          "top_left_x": 391,
+          "top_left_y": 639,
+          "bottom_right_x": 456,
+          "bottom_right_y": 704,
+          "image_base64": null,
+          "image_annotation": "{\"description\": \"An image of a QR code.\", \"kind\": \"diagram\"}"
+        },
+        {
+          "id": "img-3.jpeg",
+          "top_left_x": 391,
+          "top_left_y": 639,
+          "bottom_right_x": 456,
+          "bottom_right_y": 704,
+          "image_base64": null,
+          "image_annotation": "{\"description\": \"An image of a QR code.\", \"kind\": \"diagram\"}"
+        },
+        {
+          "id": "img-4.jpeg",
+          "top_left_x": 391,
+          "top_left_y": 828,
+          "bottom_right_x": 453,
+          "bottom_right_y": 889,
+          "image_base64": null,
+          "image_annotation": "{\"description\": \"An image containing multiple QR codes.\", \"kind\": \"photo\"}"
+        }
+      ],
+      "dimensions": {
+        "dpi": 96,
+        "height": 1020,
+        "width": 850
+      },
+      "tables": [],
+      "hyperlinks": [],
+      "header": null,
+      "footer": null,
+      "confidence_scores": null
+    }
+  ],
+  "model": "mistral-ocr-latest",
+  "usage_info": {
+    "pages_processed": 2,
+    "doc_size_bytes": 103185080
+  },
+  "document_annotation": null
+}

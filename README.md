@@ -109,7 +109,7 @@ historical comparison baseline.
 
 - **Source:** Official Saudi Ministry of Education textbooks from the IEN national educational portal (https://ien.edu.sa) and the MoE website (https://moe.gov.sa).
 - **Author:** Ministry of Education, Kingdom of Saudi Arabia.
-- **License:** Issued by MoE for educational use. This project uses the materials strictly for non-commercial academic research and does not redistribute the raw textbooks.
+- **License:** Issued by MoE for educational use. This project uses the materials strictly for non-commercial academic research. The raw textbooks and their OCR derivatives are bundled with this repository so the RAG system is fully reproducible end-to-end; recipients must keep them inside the project and not redistribute further.
 - **Languages:** Arabic (majority) and English.
 - **Modalities:** Mix of digital-text PDFs and scanned page images (OCR routed per page).
 
@@ -233,7 +233,7 @@ Capstone project for the **Applied AI Bootcamp**. Built by a team of 2.
 ## License & Use
 
 - **Code:** to be decided (likely MIT or Apache 2.0).
-- **Textbook content:** Ministry of Education, Kingdom of Saudi Arabia. Used here strictly for non-commercial academic research under the MoE's educational-use terms. Not redistributed.
+- **Textbook content:** Ministry of Education, Kingdom of Saudi Arabia. Used here strictly for non-commercial academic research under the MoE's educational-use terms. Bundled with this repository for reproducibility; recipients must not redistribute further.
 - Any deployment beyond this capstone requires explicit permission from the Ministry of Education.
 
 ---

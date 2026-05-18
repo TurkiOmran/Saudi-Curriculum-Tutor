@@ -4,10 +4,6 @@
 .files/
 skills-lock.json
 
-# Local corpus (PDFs are already excluded via *.pdf below; this also
-# keeps stray .DS_Store and any private notes from being committed)
-Data/
-
 # Python
 __pycache__/
 *.py[cod]
@@ -29,17 +25,6 @@ env/
 .env
 .env.*
 !.env.example
-
-# Data — never commit raw textbooks or large derived artifacts
-data/raw/
-data/ocr/
-data/chunks/
-data/processed/
-chroma/*
-!chroma/README.md
-*.pdf
-*.faiss
-*.bin
 
 # Model weights / caches
 models/
