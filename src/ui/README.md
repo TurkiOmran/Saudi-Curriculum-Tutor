@@ -9,7 +9,9 @@ citation source cards to the final message.
 
 | File                          | What it does                                                                                                       |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `app.py`                      | Chainlit entrypoint — chat profiles, settings panel, **and** the `@cl.on_message` handler that drives the outer graph. |
+| `app.py`                      | Chainlit entrypoint — chat profiles, settings panel, auth stub, `@cl.on_chat_start` / `@cl.on_chat_resume` / `@cl.on_message`. |
+| `persistence.py`              | Wraps Chainlit's `SQLAlchemyDataLayer` over `./.aleem/chats.db`. Exposes `make_data_layer()` and the pure `rebuild_history()` helper used on resume. |
+| `schema.sql`                  | `CREATE TABLE IF NOT EXISTS` statements for the five tables (`users`, `threads`, `steps`, `elements`, `feedbacks`) the data layer queries. Applied once on launch. |
 | `chainlit.md`                 | Markdown shown on the Chainlit landing screen (the welcome content).                                              |
 | `.chainlit/config.toml`       | Chainlit config — wires up the custom CSS and sets the app title.                                                  |
 | `public/stylesheet.css`       | Arabic font + per-message auto-RTL. See `public/README.md`.                                                        |
@@ -47,6 +49,35 @@ hardcoded chunks and a canned LLM stub. Flip to `openrouter` (and set
   phrase + related lesson titles render without any free generation.
 - **Session history** — last `memory.max_turns × 2` turns kept in
   `cl.user_session["history"]` for the L7 rewrite node (Phase E).
+- **Persistent chat history** — left sidebar lists past chats, click to
+  restore the full transcript. Survives tab refresh / browser restart.
+  See "Persistence" below.
+
+## Persistence
+
+Chat history is stored locally in `./.aleem/chats.db` (gitignored) via
+Chainlit's official `SQLAlchemyDataLayer` over SQLite + `aiosqlite`.
+Registering a data layer makes Chainlit render the sidebar, list past
+threads, and fire `@cl.on_chat_resume` when one is reopened.
+
+Three pieces wire it together (all in `app.py`):
+
+| Hook                       | What it does                                                                                                |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `@cl.data_layer`           | Returns the configured `SQLAlchemyDataLayer`. `persistence.make_data_layer()` applies `schema.sql` first.   |
+| `@cl.header_auth_callback` | Local-only stub: always returns `cl.User(identifier="local")`. No login screen.                             |
+| `@cl.on_chat_resume`       | Rebuilds `cl.user_session["history"]` from persisted messages; restores `grade` + `subject` from thread metadata. |
+
+Thread metadata (`grade`, `subject`) is written in `on_chat_start` and
+updated by `on_settings_update`. The pipeline still reads from
+`cl.user_session` — `on_chat_resume` is what refills it.
+
+**Wipe local history:** `rm -rf .aleem/`. The schema is recreated on the
+next launch.
+
+**Deploy-time:** the single-user auth stub is temporary. Swap
+`@cl.header_auth_callback` for a real `@cl.password_auth_callback` or
+`@cl.oauth_callback`, and replace the SQLite conninfo with a hosted DB.
 
 ## How the UI ↔ graph plumbing works (L21)
 

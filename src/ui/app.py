@@ -27,11 +27,18 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 import chainlit as cl  # noqa: E402
+import chainlit.data as cl_data  # noqa: E402
 from chainlit.input_widget import Select  # noqa: E402
+from chainlit.types import ThreadDict  # noqa: E402
 
 from src.config import settings  # noqa: E402
 from src.graph.outer import outer_graph  # noqa: E402
 from src.graph.state import initial_outer_state  # noqa: E402
+from src.ui.persistence import (  # noqa: E402
+    make_data_layer,
+    parse_thread_metadata,
+    rebuild_history,
+)
 
 # Subject options. Each entry is (internal_key, bilingual_label).
 SUBJECTS: list[tuple[str, str]] = [
@@ -78,6 +85,45 @@ def _key_to_label(key: str) -> str:
         if k == key:
             return lbl
     return key
+
+
+def _subject_index(key: str) -> int:
+    for i, (k, _) in enumerate(SUBJECTS):
+        if k == key:
+            return i
+    return 0
+
+
+async def _persist_thread_metadata(**fields: object) -> None:
+    """Merge fields into the current thread's metadata.
+
+    SQLAlchemyDataLayer.update_thread merges with the existing row (it
+    SELECTs first), so passing one field at a time is safe — it won't
+    blow away the others. Wrapped in try/except so a storage hiccup
+    never blocks the live chat.
+    """
+    layer = cl_data.get_data_layer()
+    if layer is None:
+        return
+    thread_id = cl.context.session.thread_id
+    if not thread_id:
+        return
+    try:
+        await layer.update_thread(thread_id=thread_id, metadata=dict(fields))
+    except Exception:  # noqa: BLE001 — never let bookkeeping break the UI
+        pass
+
+
+@cl.data_layer
+def _data_layer():
+    return make_data_layer()
+
+
+@cl.header_auth_callback
+def _header_auth(headers) -> cl.User | None:
+    # Local-only build: a single hardcoded user so the data layer has
+    # someone to scope threads to. Replace with real auth at deploy time.
+    return cl.User(identifier="local", metadata={"role": "local"})
 
 
 @cl.set_chat_profiles
@@ -139,6 +185,12 @@ async def on_chat_start() -> None:
     initial_subject = _label_to_key(chat_settings["subject"])
     cl.user_session.set("subject", initial_subject)
 
+    # Tag the thread so on_chat_resume can restore grade/subject without
+    # walking the messages. Grade comes from the chat profile, subject
+    # from the settings dropdown — neither is recoverable from the
+    # transcript alone.
+    await _persist_thread_metadata(grade=grade, subject=initial_subject)
+
     await cl.Message(
         content=(
             f"**أهلاً بك في عليم  ·  Welcome to Aleem**\n\n"
@@ -155,7 +207,56 @@ async def on_chat_start() -> None:
 async def on_settings_update(chat_settings: dict) -> None:
     label = chat_settings.get("subject")
     if label:
-        cl.user_session.set("subject", _label_to_key(label))
+        key = _label_to_key(label)
+        cl.user_session.set("subject", key)
+        await _persist_thread_metadata(subject=key)
+
+
+@cl.on_chat_resume
+async def on_chat_resume(thread: ThreadDict) -> None:
+    """Rehydrate cl.user_session from a persisted thread.
+
+    Chainlit replays the transcript itself; this hook only re-fills the
+    three values the pipeline reads from cl.user_session: grade,
+    subject, and history. Grade & subject come from thread metadata
+    (we tagged them at on_chat_start); history is rebuilt from the
+    persisted user/assistant messages so the L7 rewrite node sees
+    prior turns.
+    """
+    metadata = parse_thread_metadata(thread.get("metadata"))
+
+    # Grade: prefer metadata; fall back to the chat profile name.
+    grade = metadata.get("grade")
+    if grade is None:
+        profile = cl.user_session.get("chat_profile")
+        try:
+            grade = int(str(profile).split()[1])
+        except (ValueError, IndexError, AttributeError):
+            grade = None
+    if grade is not None:
+        cl.user_session.set("grade", int(grade))
+
+    # Subject: prefer metadata; fall back to first SUBJECTS entry.
+    subject = metadata.get("subject") or SUBJECTS[0][0]
+    cl.user_session.set("subject", subject)
+
+    # History: rebuild from persisted messages, capped to the rewrite
+    # node's window so we don't blow the prompt budget.
+    history = rebuild_history(thread, settings.memory.max_turns)
+    cl.user_session.set("history", history)
+
+    # Re-send the settings widget so the subject dropdown reflects the
+    # persisted choice.
+    await cl.ChatSettings(
+        [
+            Select(
+                id="subject",
+                label="Subject  ·  المادة",
+                values=SUBJECT_LABELS,
+                initial_index=_subject_index(subject),
+            ),
+        ]
+    ).send()
 
 
 def _citation_elements(final_state: dict) -> list[cl.Text]:

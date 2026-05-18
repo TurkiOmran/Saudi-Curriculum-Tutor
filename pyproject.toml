@@ -16,6 +16,13 @@ license = { text = "Proprietary — academic / non-commercial use only" }
 dependencies = [
     # UI
     "chainlit==2.11.1",
+    # Chat-history persistence — Chainlit's SQLAlchemyDataLayer backs the
+    # left sidebar / thread list / on_chat_resume hook. SQLite via the
+    # aiosqlite async driver; greenlet is SQLAlchemy's required runtime
+    # for async sessions on Python 3.11.
+    "sqlalchemy==2.0.36",
+    "aiosqlite==0.20.0",
+    "greenlet==3.1.1",
     # Vector store
     "chromadb==1.5.9",
     # Embedding model stack (Jina-v4 via HuggingFace)

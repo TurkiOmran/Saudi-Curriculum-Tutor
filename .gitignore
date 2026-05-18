@@ -57,6 +57,9 @@ src/ui/.chainlit/translations/
 # Query logs (L18 — daily JSONL, recreated by runs)
 logs/
 
+# Local chat-history SQLite (Chainlit data layer — see src/ui/persistence.py)
+.aleem/
+
 # OS / editor
 .DS_Store
 Thumbs.db

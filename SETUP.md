@@ -99,12 +99,13 @@ cp .env.example .env
 Open `.env` and set whichever keys you need. All are optional for the
 default `backend: fake` flow:
 
-| Var                  | When required                                                  | What it does                                                          |
-| -------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `OPENROUTER_API_KEY` | Only when `llm.backend: openrouter`                            | Real LLM calls. Get a key at <https://openrouter.ai/keys>.            |
-| `HF_TOKEN`           | Embeddings / reranker model download (gated Jina-v4)           | Accept the license on the HF model page first.                        |
-| `MISTRAL_API_KEY`    | Only when running the ingest pipeline (`python -m src.ingest`) | Powers the Mistral OCR call. Key at <https://console.mistral.ai/api-keys/>. |
-| `CHROMA_DIR`         | No (defaults to `./chroma`)                                    | Override where Chroma persists its SQLite + parquet files.            |
+| Var                    | When required                                                  | What it does                                                          |
+| ---------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `OPENROUTER_API_KEY`   | Only when `llm.backend: openrouter`                            | Real LLM calls. Get a key at <https://openrouter.ai/keys>.            |
+| `HF_TOKEN`             | Embeddings / reranker model download (gated Jina-v4)           | Accept the license on the HF model page first.                        |
+| `MISTRAL_API_KEY`      | Only when running the ingest pipeline (`python -m src.ingest`) | Powers the Mistral OCR call. Key at <https://console.mistral.ai/api-keys/>. |
+| `CHROMA_DIR`           | No (defaults to `./chroma`)                                    | Override where Chroma persists its SQLite + parquet files.            |
+| `CHAINLIT_AUTH_SECRET` | Always (the UI registers an auth callback)                     | Signs the session cookie. Generate one with `uv run chainlit create-secret` and paste into `.env`. |
 
 ---
 
@@ -229,6 +230,20 @@ in `logs/queries-$(date +%F).jsonl` — tail it in a separate terminal:
 ```bash
 tail -f logs/queries-$(date +%F).jsonl
 ```
+
+### Persistent chat history
+
+Past chats appear in the left sidebar and survive browser refresh. State
+lives in `./.aleem/chats.db` (SQLite, gitignored). The schema is applied
+on first launch by `src/ui/persistence.py`. To wipe local history:
+
+```bash
+rm -rf .aleem/
+```
+
+The current build uses a single hardcoded local user (`identifier =
+"local"`) so the data layer has someone to scope threads to — there's
+no login screen. Real auth is deferred to deploy.
 
 ---
 
