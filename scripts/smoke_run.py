@@ -1,8 +1,9 @@
-"""Programmatic smoke test of the agentic pipeline — no Chainlit, no UI.
+"""Programmatic smoke test of the workflow-sandbox agent — no Chainlit, no UI.
 
-Day-one milestone per L10: with `llm.backend: fake` in `config.yaml`, this
-runs the full outer graph end-to-end without an API key, printing the
-merged answer + the inner-graph debug dict.
+With `llm.backend: fake` in `config.yaml`, this runs the full agent end-
+to-end without an API key (the @tool short-circuits to stub chunks when
+Chroma is empty). Prints the answer, the tool-call trace, the verifier
+verdict, and the latency breakdown.
 
 Usage (from repo root):
 
@@ -22,8 +23,8 @@ from pathlib import Path
 # Make `src.*` importable when running this script directly from anywhere.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.graph.outer import outer_graph  # noqa: E402
-from src.graph.state import initial_outer_state  # noqa: E402
+from src.graph.agent import run_agent  # noqa: E402
+from src.graph.state import initial_agent_state  # noqa: E402
 
 
 def _jsonable(obj):  # noqa: ANN001, ANN202
@@ -37,27 +38,40 @@ def _jsonable(obj):  # noqa: ANN001, ANN202
 
 
 async def main(question: str, grade: int, subject: str) -> int:
-    initial = initial_outer_state(
+    initial = initial_agent_state(
         grade=grade,
         subject=subject,
         user_query=question,
     )
-    final = await outer_graph.ainvoke(initial)
+    final = await run_agent(initial)
 
     print("\n=== FINAL ANSWER ===\n")
     print(final.get("final_answer", "(no answer)"))
 
-    tasks = final.get("tasks") or []
-    for i, task in enumerate(tasks):
-        print(f"\n=== TASK {i + 1} DEBUG ===\n")
-        print(f"intent             : {task.get('intent')}")
-        print(f"self_check_passed  : {task.get('self_check_passed')}")
-        print(f"refused            : {task.get('refused')}")
-        print(f"chunks             : {len(task.get('chunks') or [])}")
-        print(f"citations          : {len(task.get('citations') or [])}")
-        debug = task.get("debug") or {}
-        if debug:
-            print("debug              :", json.dumps(_jsonable(debug), indent=2, ensure_ascii=False))
+    print("\n=== TOOL CALLS ===\n")
+    tool_calls = final.get("tool_calls") or []
+    if not tool_calls:
+        print("(none)")
+    for i, tc in enumerate(tool_calls, start=1):
+        scores = ", ".join(f"{c.rerank_score:.2f}" for c in tc.chunks)
+        print(f"{i}. retrieve({tc.query!r}) → {len(tc.chunks)} chunks [{scores}]")
+
+    print("\n=== VERIFIER ===\n")
+    print(f"verdict : {final.get('verifier_verdict')}")
+    print(f"reason  : {final.get('verifier_reason')}")
+
+    if final.get("refused"):
+        print(f"\nrefused : True (reason: {final.get('refusal_reason')!r})")
+
+    if flags := final.get("citation_flags"):
+        print("\n=== CITATION FLAGS ===\n")
+        for flag in flags:
+            print(f"- {flag}")
+
+    debug = final.get("debug") or {}
+    if debug:
+        print("\n=== DEBUG ===\n")
+        print(json.dumps(_jsonable(debug), indent=2, ensure_ascii=False))
 
     return 0
 

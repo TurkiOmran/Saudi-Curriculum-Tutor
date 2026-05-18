@@ -1,12 +1,8 @@
-"""State contracts — `Chunk`, `TaskState`, `OuterState` initializers."""
+"""State contracts — `Chunk`, `AgentState`, `initial_agent_state()`."""
 
 from __future__ import annotations
 
-from src.graph.state import (
-    Chunk,
-    initial_outer_state,
-    initial_task_state,
-)
+from src.graph.state import Chunk, initial_agent_state
 
 
 def test_chunk_dataclass_round_trip():
@@ -28,34 +24,27 @@ def test_chunk_dataclass_round_trip():
     assert md["rerank_score"] == 0.5
 
 
-def test_initial_task_state_defaults():
-    s = initial_task_state(grade=4, subject="arabic", standalone_question="q", language="ar")
-    # Required fields land
+def test_initial_agent_state_defaults():
+    s = initial_agent_state(grade=4, subject="arabic", user_query="hello")
+    # Required fields
     assert s["grade"] == 4
     assert s["subject"] == "arabic"
-    assert s["standalone_question"] == "q"
-    assert s["language"] == "ar"
-    # Optional-but-initialized defaults
-    assert s["chunks"] == []
-    assert s["citations"] == []
-    assert s["refused"] is False
-    assert s["debug"] == {}
+    assert s["user_query"] == "hello"
+    # Defaults
     assert s["history"] == []
+    assert s["final_answer"] == ""
+    assert s["tool_calls"] == []
+    assert s["citations"] == []
+    assert s["citation_flags"] == []
+    assert s["refused"] is False
+    assert s["refusal_reason"] == ""
+    assert s["verifier_verdict"] == "skipped"
+    assert s["debug"] == {}
 
 
-def test_initial_task_state_with_history():
+def test_initial_agent_state_with_history():
     history = [{"role": "user", "content": "hi"}]
-    s = initial_task_state(
-        grade=10, subject="math", standalone_question="q", language="en", history=history
+    s = initial_agent_state(
+        grade=10, subject="math", user_query="quiz me", history=history
     )
     assert s["history"] == history
-
-
-def test_initial_outer_state_defaults():
-    s = initial_outer_state(grade=7, subject="english", user_query="hello")
-    assert s["grade"] == 7
-    assert s["subject"] == "english"
-    assert s["user_query"] == "hello"
-    assert s["history"] == []
-    assert s["tasks"] == []
-    assert s["debug"] == {}
