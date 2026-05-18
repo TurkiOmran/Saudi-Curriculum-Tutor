@@ -1,12 +1,17 @@
-"""Aleem — Chainlit UI driving the LangGraph outer pipeline.
+"""Aleem — Chainlit UI driving the workflow-sandbox tool-calling agent.
 
-Wiring per L21: `@cl.on_message` invokes `outer_graph.astream_events(...)`
-and maps LangGraph events to Chainlit UI primitives — `cl.Step` cards per
-node start/end (L11 "showing work"), token-by-token streaming for the
-generate node, and `cl.Text` citation cards attached to the final answer.
+Wiring per WORKFLOW_SANDBOX.md §3 / §7:
 
-Graph nodes stay pure (no `cl.*` calls inside them) — this handler is the
-only place the two worlds meet.
+  - Tool calls become ephemeral status updates (`Searching: "<query>"`).
+  - The agent's chat-model stream pipes tokens into the live answer
+    message (same `astream_events` plumbing the old per-node UI used —
+    only the node-name filter changes).
+  - After the stream closes, `finalize_agent_run()` runs citation parse
+    + topical verifier + JSONL logging, and citation cards are attached
+    to the answer.
+
+Graph internals stay pure — this handler is the only place LangGraph
+events meet Chainlit primitives.
 
 Run from `src/ui/`:
 
@@ -16,6 +21,7 @@ Run from `src/ui/`:
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 # When this file is run by Chainlit from `src/ui/`, the repo root is two
@@ -30,10 +36,19 @@ import chainlit as cl  # noqa: E402
 import chainlit.data as cl_data  # noqa: E402
 from chainlit.input_widget import Select  # noqa: E402
 from chainlit.types import ThreadDict  # noqa: E402
+from langchain_core.messages import BaseMessage, HumanMessage  # noqa: E402
+from langgraph.errors import GraphRecursionError  # noqa: E402
 
 from src.config import settings  # noqa: E402
-from src.graph.outer import outer_graph  # noqa: E402
-from src.graph.state import initial_outer_state  # noqa: E402
+from src.graph.agent import (  # noqa: E402
+    build_agent,
+    finalize_agent_run,
+    history_to_messages,
+    recursion_limit,
+)
+from src.graph.logging import log_query  # noqa: E402
+from src.graph.state import initial_agent_state  # noqa: E402
+from src.graph.tools import set_request_context  # noqa: E402
 from src.ui.persistence import (  # noqa: E402
     make_data_layer,
     parse_thread_metadata,
@@ -51,26 +66,10 @@ SUBJECTS: list[tuple[str, str]] = [
 SUBJECT_LABELS = [label for _, label in SUBJECTS]
 
 
-# Friendly per-node labels for cl.Step (L11). Keys are the LangGraph node
-# names from outer.py / inner.py. Anything not in this map is treated as
-# internal plumbing and won't get its own step card.
-NODE_LABELS: dict[str, str] = {
-    "rewrite": "Understanding your question…",
-    "decompose": "Splitting compound requests…",
-    "intent": "Detecting intent…",
-    "retrieve": "Finding relevant pages…",
-    "self_check": "Checking the textbook…",
-    "generate": "Composing answer…",
-    "refuse": "Preparing related topics…",
-    "citations": "Resolving citations…",
-    "chat": "Replying…",   # L22 — non-curriculum conversational replies
-    "merge": "Combining answers…",
-}
-
-# Nodes whose token streams should pipe into the live Chainlit message
-# (L11). Both `generate` (grounded answer) and `chat` (L22 conversational
-# reply) emit user-facing text token-by-token.
-STREAMING_NODES = {"generate", "chat"}
+# The prebuilt agent's internal nodes are named "agent" (the LLM call)
+# and "tools" (the tool execution). We stream tokens from "agent" and
+# surface tool-call invocations from "tools".
+AGENT_LLM_NODE = "agent"
 
 
 def _label_to_key(label: str) -> str:
@@ -220,8 +219,7 @@ async def on_chat_resume(thread: ThreadDict) -> None:
     three values the pipeline reads from cl.user_session: grade,
     subject, and history. Grade & subject come from thread metadata
     (we tagged them at on_chat_start); history is rebuilt from the
-    persisted user/assistant messages so the L7 rewrite node sees
-    prior turns.
+    persisted user/assistant messages so the agent sees prior turns.
     """
     metadata = parse_thread_metadata(thread.get("metadata"))
 
@@ -260,24 +258,21 @@ async def on_chat_resume(thread: ThreadDict) -> None:
 
 
 def _citation_elements(final_state: dict) -> list[cl.Text]:
-    """Build expandable source cards for citations across all tasks."""
+    """Build expandable source cards from the parsed citations."""
     elements: list[cl.Text] = []
-    seen_ids: set[tuple[int, int]] = set()  # (task_idx, citation_n)
-    tasks = final_state.get("tasks") or []
-    for t_idx, task in enumerate(tasks):
-        for cit in (task.get("citations") or []):
-            key = (t_idx, cit.n)
-            if key in seen_ids:
-                continue
-            seen_ids.add(key)
-            chunk = cit.chunk
-            elements.append(
-                cl.Text(
-                    name=f"[{cit.n}] {chunk.lesson_title} · p.{chunk.page}",
-                    content=chunk.text,
-                    display="side",
-                )
+    seen: set[int] = set()
+    for cit in (final_state.get("citations") or []):
+        if cit.n in seen:
+            continue
+        seen.add(cit.n)
+        chunk = cit.chunk
+        elements.append(
+            cl.Text(
+                name=f"[{cit.n}] {chunk.lesson_title} · p.{chunk.page}",
+                content=chunk.text,
+                display="side",
             )
+        )
     return elements
 
 
@@ -296,54 +291,56 @@ async def on_message(message: cl.Message) -> None:
         ).send()
         return
 
-    initial = initial_outer_state(
+    state = initial_agent_state(
         grade=grade,
         subject=subject,
         user_query=message.content,
         history=history,
     )
 
-    # Single ephemeral status message that updates as the pipeline progresses
-    # (ChatGPT / Claude.ai pattern) — removed once the final answer is ready
-    # so it doesn't persist in the transcript. The L11 "showing work" goal
-    # is preserved live; the JSONL log keeps the full trace post-hoc.
+    # Ephemeral status — updates with each tool call, removed once the
+    # answer is ready so it doesn't persist in the transcript.
     status_msg = cl.Message(content="⏳ Thinking…", author="Aleem")
     await status_msg.send()
 
-    # Answer message — tokens stream into this from generate / chat nodes.
+    # Answer message — tokens stream into this from the agent's LLM node.
     answer_msg = cl.Message(content="")
     await answer_msg.send()
 
-    root_run_id: str | None = None
-    final_state: dict | None = None
+    set_request_context(grade, subject)
+    agent = build_agent(grade, subject)
+
+    messages: list[BaseMessage] = [
+        *history_to_messages(history),
+        HumanMessage(content=message.content),
+    ]
+
+    ceiling_hit = False
+    final_messages: list[BaseMessage] = list(messages)
+    t0 = time.perf_counter()
+    agent_loop_ms = 0
 
     try:
-        async for ev in outer_graph.astream_events(initial, version="v2"):
+        async for ev in agent.astream_events(
+            {"messages": messages},
+            version="v2",
+            config={"recursion_limit": recursion_limit()},
+        ):
             et = ev["event"]
             name = ev["name"]
-            run_id = ev["run_id"]
             md = ev.get("metadata") or {}
 
-            # First event we see is the root chain's start.
-            if root_run_id is None and et == "on_chain_start":
-                root_run_id = run_id
-
-            # Capture final state when the root chain ends.
-            if et == "on_chain_end" and run_id == root_run_id:
-                output = ev["data"].get("output")
-                if isinstance(output, dict):
-                    final_state = output
-
-            # Update the in-place status line on each node start.
-            label = NODE_LABELS.get(name)
-            if label is not None and et == "on_chain_start":
-                status_msg.content = f"⏳ {label}"
+            # Tool-call surfacing — show the verbatim query.
+            if et == "on_tool_start" and name == "retrieve":
+                inputs = ev["data"].get("input") or {}
+                query = inputs.get("query", "")
+                status_msg.content = f"🔎 Searching: “{query}”"
                 await status_msg.update()
 
-            # Token streaming for the generate / chat nodes (L21, L22).
+            # Token streaming from the agent LLM node.
             if (
                 et == "on_chat_model_stream"
-                and md.get("langgraph_node") in STREAMING_NODES
+                and md.get("langgraph_node") == AGENT_LLM_NODE
             ):
                 chunk = ev["data"].get("chunk")
                 content = getattr(chunk, "content", None)
@@ -351,9 +348,21 @@ async def on_message(message: cl.Message) -> None:
                     await answer_msg.stream_token(content)
                 elif isinstance(content, list):
                     for part in content:
-                        if isinstance(part, dict) and isinstance(part.get("text"), str):
+                        if (
+                            isinstance(part, dict)
+                            and isinstance(part.get("text"), str)
+                            and part["text"]
+                        ):
                             await answer_msg.stream_token(part["text"])
 
+            # Capture the final message list from the root chain's end.
+            if et == "on_chain_end" and name == "LangGraph":
+                output = ev["data"].get("output")
+                if isinstance(output, dict) and "messages" in output:
+                    final_messages = list(output["messages"])
+
+    except GraphRecursionError:
+        ceiling_hit = True
     except Exception as exc:  # noqa: BLE001 — surface any failure visibly per L20
         try:
             await status_msg.remove()
@@ -363,32 +372,47 @@ async def on_message(message: cl.Message) -> None:
             content=f"⚠️ **Pipeline error**\n\n```\n{exc}\n```"
         ).send()
         return
+    finally:
+        agent_loop_ms = int((time.perf_counter() - t0) * 1000)
 
-    # Pipeline finished — drop the ephemeral status line.
+    # Run post-hoc verifier + citation parse using the same finalize
+    # helper that run_agent() uses.
+    update = await finalize_agent_run(
+        state,
+        final_messages=final_messages,
+        ceiling_hit=ceiling_hit,
+    )
+
+    # Merge update + per-phase latency into the state for L18 logging.
+    debug = dict(state.get("debug") or {})
+    debug.update(update.get("debug") or {})
+    latency_ms = dict(debug.get("latency_ms") or {})
+    latency_ms["agent_loop"] = agent_loop_ms
+    latency_ms["total"] = int((time.perf_counter() - t0) * 1000)
+    debug["latency_ms"] = latency_ms
+
+    final_state: dict = {**state, **update, "debug": debug}
+
     try:
-        await status_msg.remove()
-    except Exception:  # noqa: BLE001 — never let UI bookkeeping break the answer
+        log_query(final_state)
+    except Exception:  # noqa: BLE001 — logging must never break the UI
         pass
 
-    if final_state is None:
-        await cl.Message(content="⚠️ Pipeline produced no state.").send()
-        return
+    # Drop the ephemeral status line.
+    try:
+        await status_msg.remove()
+    except Exception:  # noqa: BLE001
+        pass
 
     final_answer = final_state.get("final_answer", "") or ""
-
-    # Always replace whatever the streaming produced with the canonical
-    # merged answer. Streaming concatenates tokens from each task's generate
-    # node into one cl.Message, which loses the "### Part N" headers and
-    # the "---" separator that merge_node assembles for multi-task queries.
-    # For single-task happy paths the two values are identical (no visual
-    # jump); for refuse / chat / multi-task paths this restores structure.
+    # Replace whatever the stream produced with the canonical final answer
+    # (the verifier may have swapped it for a refusal; the streaming
+    # tokens won't reflect that).
     answer_msg.content = final_answer
-
     answer_msg.elements = _citation_elements(final_state)
     await answer_msg.update()
 
-    # Append this turn to history for L7 rewrite (Phase E). Cap at the
-    # configured max_turns * 2 (user+assistant per turn).
+    # Append this turn to history. Cap at memory.max_turns * 2 (user + assistant).
     history.append({"role": "user", "content": message.content})
     history.append({"role": "assistant", "content": final_answer})
     history = history[-(settings.memory.max_turns * 2):]
