@@ -1,5 +1,9 @@
-"""Aleem agentic graph — LangGraph orchestration of the query path.
+"""Aleem agentic graph — workflow-sandbox tool-calling agent.
 
-Decisions live in `RESPONSE_WORKFLOW.md` (L1–L21). See `src/graph/README.md`
-for a node-by-node map.
+Decisions live in `WORKFLOW_SANDBOX.md`. See `src/graph/README.md` for
+the file-by-file map.
 """
+
+from src.graph.agent import run_agent
+
+__all__ = ["run_agent"]
