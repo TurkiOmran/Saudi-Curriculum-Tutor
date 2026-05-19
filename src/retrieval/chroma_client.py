@@ -39,11 +39,10 @@ DEFAULT_CHROMA_DIR = REPO_ROOT / "chroma"
 
 GRADES: tuple[int, ...] = (4, 7, 8, 10)
 SUBJECTS: tuple[str, ...] = (
-    "arabic",
     "islamic_studies",
     "social_studies",
     "english",
-    "math",
+    "digital_skills",
 )
 
 

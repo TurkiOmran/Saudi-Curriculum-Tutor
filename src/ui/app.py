@@ -64,11 +64,10 @@ prewarm_models_in_background()
 
 # Subject options. Each entry is (internal_key, bilingual_label).
 SUBJECTS: list[tuple[str, str]] = [
-    ("arabic",          "العربية  ·  Arabic"),
     ("islamic_studies", "الدراسات الإسلامية  ·  Islamic Studies"),
     ("social_studies",  "الاجتماعيات  ·  Social Studies"),
     ("english",         "اللغة الإنجليزية  ·  English"),
-    ("math",            "الرياضيات  ·  Math"),
+    ("digital_skills",  "المهارات الرقمية  ·  Digital Skills"),
 ]
 SUBJECT_LABELS = [label for _, label in SUBJECTS]
 

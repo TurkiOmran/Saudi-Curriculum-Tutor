@@ -28,7 +28,7 @@ def test_main_rejects_grade_5(capsys):
         main([
             "some.pdf",
             "--grade", "5",
-            "--subject", "math",
+            "--subject", "english",
             "--book", "b",
             "--book-id", "bid",
         ])
