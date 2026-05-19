@@ -49,11 +49,18 @@ from src.graph.agent import (  # noqa: E402
 from src.graph.logging import log_query  # noqa: E402
 from src.graph.state import initial_agent_state  # noqa: E402
 from src.graph.tools import set_request_context  # noqa: E402
+from src.retrieval.prewarm import prewarm_models_in_background  # noqa: E402
 from src.ui.persistence import (  # noqa: E402
     make_data_layer,
     parse_thread_metadata,
     rebuild_history,
 )
+
+# Kick off Jina embedder + reranker loads in a daemon thread at module
+# import so the first retrieve() doesn't block the asyncio loop on a
+# ~15s cold model load (which freezes the Chainlit status bar). Gated
+# on at least one populated grade collection — see prewarm.py.
+prewarm_models_in_background()
 
 # Subject options. Each entry is (internal_key, bilingual_label).
 SUBJECTS: list[tuple[str, str]] = [

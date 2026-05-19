@@ -8,10 +8,11 @@ Chroma store. Other modules (`ingest/`, `graph/`, `ui/`) talk to Chroma
 
 | File                | What it does                                                                 |
 | ------------------- | ---------------------------------------------------------------------------- |
-| `embeddings.py`     | `JinaV4EmbeddingFunction` — Chroma-compatible wrapper around `jinaai/jina-embeddings-v4`. Lazy-loads the HF model on first call. |
+| `embeddings.py`     | `JinaV4EmbeddingFunction` — Chroma-compatible wrapper around `jinaai/jina-embeddings-v4`. The HF model is a module-level singleton (shared across instances) and lazy-loads on first call. |
 | `chroma_client.py`  | `get_client()`, `get_collection(grade, task_mode)`, plus the `GRADES` and `SUBJECTS` constants and the metadata schema docstring. |
 | `init_chroma.py`    | One-time setup script. Creates `grade_4`, `grade_7`, `grade_8`, `grade_10` collections with Jina-v4 attached. Idempotent. |
 | `reranker.py`       | `JinaReranker` — cross-encoder rerank using `jinaai/jina-reranker-v2-base-multilingual`. Singleton, lazy-loaded. |
+| `prewarm.py`        | `prewarm_models_in_background()` — fires the embedder + reranker loads in a daemon thread at app boot so the first query doesn't block the asyncio loop. Gated on at least one populated grade collection. |
 
 ## How to use
 
@@ -61,6 +62,14 @@ col.add(
 - **Lazy model load**: `JinaV4EmbeddingFunction.__init__` does not download
   or load Jina-v4 — that happens on first `__call__`. So `init_chroma.py`
   runs cheaply without GPU time.
+- **Shared model across instances**: the HF model lives in a module-level
+  singleton under a lock (see `_load_model` in `embeddings.py`). Chroma
+  re-attaches a fresh `JinaV4EmbeddingFunction` to every collection it
+  opens, so per-instance caching would reload ~3GB of weights per query.
+- **Prewarm at app boot**: the UI calls `prewarm_models_in_background()`
+  at module import (`src/ui/app.py`) so the first retrieve doesn't pay a
+  ~15s cold-load tax on the asyncio loop. Skipped automatically when
+  every grade collection is empty (test mode / fresh clone).
 - **Embedder must be re-attached on every `get_collection`** — Chroma
   persists data but not the embedding function instance. `chroma_client.get_collection`
   handles this for you.

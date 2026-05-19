@@ -77,3 +77,11 @@ def get_reranker() -> JinaReranker:
     if _singleton is None:
         _singleton = JinaReranker()
     return _singleton
+
+
+def prewarm_reranker() -> None:
+    """Force-load the reranker model. Safe to call from a background
+    thread at app startup so the first retrieve doesn't pay the cold
+    ~7s load tax on the asyncio loop.
+    """
+    get_reranker()._load()

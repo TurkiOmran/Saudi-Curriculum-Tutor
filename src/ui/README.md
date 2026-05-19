@@ -99,6 +99,15 @@ came through earlier).
 
 Graph internals never import Chainlit. This file is the only seam.
 
+## Model prewarm
+
+`app.py` calls `prewarm_models_in_background()` at module import so the
+Jina embedder + reranker load in a daemon thread while Chainlit is
+spinning up. Without this, the first retrieve blocks the asyncio loop
+for ~15s and the status bar can't update until the load completes.
+The prewarm skips itself when every grade collection is empty — see
+`src/retrieval/prewarm.py`.
+
 ## Subject ↔ key mapping
 
 The dropdown shows bilingual labels (e.g. `العربية  ·  Arabic`) but
