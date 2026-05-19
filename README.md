@@ -202,6 +202,17 @@ historical comparison baseline.
 
 ### Quick start
 
+**With Docker** (one image, same in dev and deploy):
+
+```bash
+git clone <repo-url> Aleem && cd Aleem
+cp .env.example .env                                       # fill CHAINLIT_AUTH_SECRET
+just build && just up                                      # browser UI at :8000
+just test                                                  # 65 tests in container
+```
+
+**With uv directly** (bare-metal, no container):
+
 ```bash
 git clone <repo-url> Aleem && cd Aleem
 uv sync                                                    # install deps
@@ -212,8 +223,9 @@ uv run python scripts/smoke_run.py "what is photosynthesis?"   # no UI, no API k
 uv run pytest                                              # 65 tests, ~4s
 ```
 
-Full step-by-step in [`SETUP.md`](SETUP.md), including how to switch
-backends, troubleshoot rate limits, and tail the JSONL query log.
+Full step-by-step in [`SETUP.md`](SETUP.md) — including Docker prereqs,
+how to switch backends, troubleshoot rate limits, and tail the JSONL
+query log.
 
 ---
 

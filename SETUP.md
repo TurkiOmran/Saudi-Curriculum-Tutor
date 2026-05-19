@@ -65,6 +65,66 @@ That's the whole step. `uv` handles the venv in §3.
 
 ---
 
+## 2.5 Run with Docker *(recommended — dev/prod parity)*
+
+The fastest path to a running Aleem. The same image (built from the
+repo's `Dockerfile`) ships unchanged to Fly.io, Cloud Run, Render, or a
+VM — only env vars differ in prod.
+
+### Prerequisites
+
+| Tool             | macOS install                     | Notes                                                |
+| ---------------- | --------------------------------- | ---------------------------------------------------- |
+| **Docker**       | Docker Desktop, or `brew install colima docker docker-compose` | Needs to support Compose v2 (`docker compose …`).    |
+| **just**         | `brew install just`               | Thin task-runner over `docker compose`. Optional but assumed by the recipes below. |
+
+### One-shot startup
+
+```bash
+cp .env.example .env
+# Generate the required Chainlit session secret and paste into .env:
+uv run chainlit create-secret      # or: openssl rand -hex 32
+just build                         # first build ~3–5 min; cached after
+just up                            # → http://localhost:8000
+```
+
+Everything else lives in `just`:
+
+```bash
+just logs        # tail chainlit + agent logs
+just restart     # bounce after a config change
+just shell       # interactive shell in the running container
+just down        # stop + remove (volumes survive)
+just init        # initialise Chroma collections (one-time)
+just ingest      # run the Mistral OCR → embed pipeline
+just test        # run pytest inside the container
+just lint        # run ruff inside the container
+just dev         # bare-metal fallback — runs Chainlit via local .venv
+```
+
+### What gets baked vs. mounted
+
+- **Baked into the image** so `docker run aleem:dev` works out of the
+  box: `src/`, `prompts/`, `config.yaml`, `chroma/`, `Data/`.
+- **Bind-mounted from the host** by `docker-compose.yml` so dev edits
+  take effect live: `src/`, `prompts/`, `config.yaml`, `chroma/`,
+  `Data/`, `.aleem/` (chat history), `logs/`.
+- **Named volume** (`hf-cache`) holds the ~3 GB Jina-v4 + reranker
+  weights so they survive image rebuilds.
+
+In a prod deploy you'd drop the live-code overlays and rely on the
+baked copies, or swap `chroma/` for a network-mounted volume.
+
+### Building from Apple Silicon for an amd64 cloud target
+
+```bash
+docker buildx build --platform linux/amd64 -t aleem:amd64 .
+```
+
+(Skip this for local dev — `just build` targets the host arch.)
+
+---
+
 ## 3. Install dependencies
 
 All deps are locked in `uv.lock` (committed) with exact versions and wheel
