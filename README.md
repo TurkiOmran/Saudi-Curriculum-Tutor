@@ -146,11 +146,13 @@ historical comparison baseline.
 .
 ├── README.md                             ✓
 ├── BUILD_SPEC.md                         ✓  Locked design decisions (§1–§10)
-├── RESPONSE_WORKFLOW.md                  ✓  Historical pipeline decisions (L1–L22)
-├── docs/WORKFLOW_SANDBOX.md              ✓  Current tool-calling agent spec
 ├── SETUP.md                              ✓  Install + run instructions
 ├── AGENTS.md (CLAUDE.md → AGENTS.md)     ✓  Navigational map (for Claude Code sessions)
-├── Capstone_Proposal_*.md                ✓  Original proposal (historical)
+├── docs/
+│   ├── WORKFLOW_SANDBOX.md               ✓  Current tool-calling agent spec
+│   ├── RESPONSE_WORKFLOW.md              ✓  Historical pipeline decisions (L1–L22)
+│   ├── OCR_implementation.md             ✓  Locked ingest/OCR design
+│   └── Capstone_Proposal_*.md            ✓  Original proposal (historical)
 ├── config.yaml                           ✓  Backend-pluggable LLM + agent + verifier config
 ├── Data/Books/                           ✓  Raw textbook PDFs (gitignored)
 ├── chroma/                               ✓  Persisted Chroma collections per grade

@@ -2,7 +2,7 @@
 
 Turns a Ministry-of-Education textbook PDF into per-grade Chroma chunks
 the retrieve node can query. The design is locked in
-[`OCR_implementation.md`](../../OCR_implementation.md); this folder is
+[`OCR_implementation.md`](../../docs/OCR_implementation.md); this folder is
 just the execution.
 
 ## Files

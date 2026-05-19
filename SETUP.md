@@ -372,7 +372,7 @@ make sure `HF_TOKEN` in your `.env` matches that account.
 | ------------------------------------- | ------------------------------------------ |
 | Understand the project pitch          | `README.md`                                |
 | Understand the locked design          | `BUILD_SPEC.md` (§1–§10)                   |
-| Understand the historical agentic-layer decisions | `RESPONSE_WORKFLOW.md` (L1–L22) |
+| Understand the historical agentic-layer decisions | `docs/RESPONSE_WORKFLOW.md` (L1–L22) |
 | Understand the current agent shape    | `docs/WORKFLOW_SANDBOX.md`                 |
 | Navigate the codebase (for Claude)    | `CLAUDE.md`                                |
 | Work inside the retrieval layer       | `src/retrieval/README.md`                  |
