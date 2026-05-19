@@ -28,7 +28,7 @@ Query decomposition agent (split compound requests)
     ↓
     Chroma top-20 from the user's grade collection (filtered by subject)
     ↓
-    Jina Reranker v3 → top-5
+    Jina Reranker v2 (jina-reranker-v2-base-multilingual) → top-5
     ↓
     ALLaM-7B self-check: "is the answer in these chunks? yes/no"
        ├─ no  → refusal + parent lesson titles of top-3 chunks
@@ -81,7 +81,7 @@ Detail in `OCR_implementation.md` §D6–D9.
 
 ### 4.3 Retrieval
 - Dense-only with Jina-v4. **No BM25, no hybrid.**
-- `top-20 retrieval → Jina Reranker v3 → top-5 → LLM`.
+- `top-20 retrieval → Jina Reranker v2 (jina-reranker-v2-base-multilingual) → top-5 → LLM`.
 - Grade isolation is structural (separate collections per grade), not policy-based.
 - Subject is a metadata filter at query time.
 
@@ -168,7 +168,7 @@ Five per grade: **Arabic, Islamic studies, social studies, English, Math**.
 ## 7. Compute & Deployment
 
 - **OCR, chunking, embedding** all run offline, once. Outputs persisted to the repo (Chroma DB file checked in or attached release).
-- **At query time** only Jina-v4 (query embedding), Jina Reranker v3, and ALLaM-7B run live.
+- **At query time** only Jina-v4 (query embedding), Jina Reranker v2, and ALLaM-7B run live.
 - **Primary inference:** cloud GPU (Modal / Runpod / Lambda — to be finalized).
 - **Chainlit UI:** local laptop during the demo.
 - **Backup for demo day:** pre-tested cloud GPU instance with the full stack, in case the local/primary path fails.
@@ -188,7 +188,6 @@ Five per grade: **Arabic, Islamic studies, social studies, English, Math**.
 ## 9. Open Decisions (Not Yet Locked)
 
 - Exact cloud GPU provider (Modal vs Runpod vs Lambda).
-- Final Jina Reranker version (v2 multilingual vs v3 — verify availability).
 - Quantization scheme for ALLaM if VRAM-bound (4-bit AWQ / GPTQ / bitsandbytes).
 - Math content_type tagging strategy if equations survive OCR.
 

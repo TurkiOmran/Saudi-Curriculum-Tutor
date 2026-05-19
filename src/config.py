@@ -48,12 +48,6 @@ class LLMConfig:
 
 
 @dataclass(frozen=True)
-class FeatureFlags:
-    history_rewrite_enabled: bool
-    decomposition_enabled: bool
-
-
-@dataclass(frozen=True)
 class RetrievalConfig:
     top_k_retrieve: int
     top_k_rerank: int
@@ -92,7 +86,6 @@ class VerifierConfig:
 @dataclass(frozen=True)
 class Settings:
     llm: LLMConfig
-    features: FeatureFlags
     retrieval: RetrievalConfig
     memory: MemoryConfig
     ingestion: IngestionConfig
@@ -123,7 +116,6 @@ def _load() -> Settings:
             max_tokens=llm["max_tokens"],
             timeout_seconds=llm["timeout_seconds"],
         ),
-        features=FeatureFlags(**raw["features"]),
         retrieval=RetrievalConfig(**raw["retrieval"]),
         memory=MemoryConfig(**raw["memory"]),
         ingestion=IngestionConfig(**raw["ingestion"]),
