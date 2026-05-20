@@ -62,14 +62,27 @@ from src.ui.persistence import (  # noqa: E402
 # on at least one populated grade collection — see prewarm.py.
 prewarm_models_in_background()
 
-# Subject options. Each entry is (internal_key, bilingual_label).
-SUBJECTS: list[tuple[str, str]] = [
-    ("islamic_studies", "الدراسات الإسلامية  ·  Islamic Studies"),
-    ("social_studies",  "الاجتماعيات  ·  Social Studies"),
-    ("english",         "اللغة الإنجليزية  ·  English"),
-    ("digital_skills",  "المهارات الرقمية  ·  Digital Skills"),
+# Subject options. Each entry is (internal_key, bilingual_label, short_en).
+# Subject is chosen from the top chat-profile dropdown (one profile per
+# subject); `short_en` is the dropdown/profile name and the chip label.
+SUBJECTS: list[tuple[str, str, str]] = [
+    ("islamic_studies", "الدراسات الإسلامية  ·  Islamic Studies", "Islamic Studies"),
+    ("social_studies",  "الاجتماعيات  ·  Social Studies",        "Social Studies"),
+    ("english",         "اللغة الإنجليزية  ·  English",            "English"),
+    ("digital_skills",  "المهارات الرقمية  ·  Digital Skills",     "Digital Skills"),
 ]
-SUBJECT_LABELS = [label for _, label in SUBJECTS]
+
+# Grade options. Each entry is (grade_int, bilingual_label). Grade is the
+# sticky "user setting": chosen in the ⚙ panel and remembered across chats
+# (new chats default to the grade of the user's most recent thread).
+GRADES: list[tuple[int, str]] = [
+    (4,  "الصف الرابع  ·  Grade 4"),
+    (7,  "الصف السابع  ·  Grade 7"),
+    (8,  "الصف الثاني المتوسط  ·  Grade 8"),
+    (10, "الصف العاشر  ·  Grade 10"),
+]
+GRADE_LABELS = [label for _, label in GRADES]
+DEFAULT_GRADE = GRADES[0][0]
 
 
 # The prebuilt agent's internal nodes are named "agent" (the LLM call)
@@ -78,23 +91,44 @@ SUBJECT_LABELS = [label for _, label in SUBJECTS]
 AGENT_LLM_NODE = "agent"
 
 
-def _label_to_key(label: str) -> str:
-    for key, lbl in SUBJECTS:
-        if lbl == label:
+def _profile_name(key: str) -> str:
+    for k, _, short in SUBJECTS:
+        if k == key:
+            return short
+    return key
+
+
+def _profile_name_to_key(name: str) -> str:
+    for key, _, short in SUBJECTS:
+        if short == name:
             return key
-    return label
+    return SUBJECTS[0][0]
 
 
 def _key_to_label(key: str) -> str:
-    for k, lbl in SUBJECTS:
+    for k, lbl, _ in SUBJECTS:
         if k == key:
             return lbl
     return key
 
 
-def _subject_index(key: str) -> int:
-    for i, (k, _) in enumerate(SUBJECTS):
-        if k == key:
+def _grade_label_to_int(label: str) -> int:
+    for g, lbl in GRADES:
+        if lbl == label:
+            return g
+    return DEFAULT_GRADE
+
+
+def _grade_to_label(grade: int) -> str:
+    for g, lbl in GRADES:
+        if g == grade:
+            return lbl
+    return GRADE_LABELS[0]
+
+
+def _grade_index(grade: int) -> int:
+    for i, (g, _) in enumerate(GRADES):
+        if g == grade:
             return i
     return 0
 
@@ -119,6 +153,93 @@ async def _persist_thread_metadata(**fields: object) -> None:
         pass
 
 
+async def _last_used_grade() -> int | None:
+    """Grade from the user's most recently-active thread, if any.
+
+    Lets grade behave like a sticky user setting without a dedicated
+    user-prefs store: we already tag every thread's metadata with its
+    grade, so the newest thread's grade is the user's last choice.
+    `get_all_user_threads` orders by last activity, so the first thread
+    carrying a grade is the most recent one.
+    """
+    layer = cl_data.get_data_layer()
+    if layer is None:
+        return None
+    user = cl.user_session.get("user")
+    user_id = getattr(user, "id", None)
+    if not user_id:
+        return None
+    try:
+        threads = await layer.get_all_user_threads(user_id=user_id)
+    except Exception:  # noqa: BLE001 — fall back to default grade on any error
+        return None
+    for thread in threads or []:
+        grade = parse_thread_metadata(thread.get("metadata")).get("grade")
+        if grade is not None:
+            try:
+                return int(grade)
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
+def _grade_settings(grade: int) -> cl.ChatSettings:
+    return cl.ChatSettings(
+        [
+            Select(
+                id="grade",
+                label="Grade  ·  الصف",
+                values=GRADE_LABELS,
+                initial_index=_grade_index(grade),
+            ),
+        ]
+    )
+
+
+def _make_context_chip(grade: int, subject: str) -> cl.CustomElement:
+    return cl.CustomElement(
+        name="ContextChip",
+        display="inline",
+        props={"grade": str(grade), "subject": _profile_name(subject)},
+    )
+
+
+async def _refresh_context_chip(grade: int, subject: str) -> None:
+    """Update the pinned Grade·Subject chip in place (no-op if absent)."""
+    chip = cl.user_session.get("context_chip")
+    if chip is None:
+        return
+    chip.props = {"grade": str(grade), "subject": _profile_name(subject)}
+    try:
+        await chip.update()
+    except Exception:  # noqa: BLE001 — chip is cosmetic, never block the chat
+        pass
+
+
+def _welcome_content(grade: int, subject: str) -> str:
+    return (
+        f"**أهلاً بك في عليم  ·  Welcome to Aleem**\n\n"
+        f"- **Subject  ·  المادة:** {_key_to_label(subject)} "
+        f"— pick another from the dropdown at the top.\n"
+        f"- **Grade  ·  الصف:** {grade} "
+        f"— change it in the ⚙ panel; it's remembered next time.\n\n"
+        f"Ask your question — every answer will come from your Grade "
+        f"{grade} textbook only."
+    )
+
+
+async def _refresh_welcome(grade: int, subject: str) -> None:
+    """Re-render the stored welcome message after a setting changes."""
+    msg = cl.user_session.get("welcome_msg")
+    if msg is None:
+        return
+    msg.content = _welcome_content(grade, subject)
+    try:
+        await msg.update()
+    except Exception:  # noqa: BLE001 — cosmetic, never block the chat
+        pass
+
+
 @cl.data_layer
 def _data_layer():
     return make_data_layer()
@@ -135,35 +256,35 @@ def _header_auth(headers) -> cl.User | None:
 async def chat_profiles() -> list[cl.ChatProfile]:
     return [
         cl.ChatProfile(
-            name="Grade 4",
+            name="Islamic Studies",
             markdown_description=(
-                "**الصف الرابع  ·  Grade 4**\n\n"
-                "Elementary stage. Aleem will answer only from your Grade 4 "
-                "Ministry of Education textbooks."
+                "**الدراسات الإسلامية  ·  Islamic Studies**\n\n"
+                "Aleem will answer only from your Ministry of Education "
+                "Islamic Studies textbook. Set your grade in the ⚙ panel."
             ),
         ),
         cl.ChatProfile(
-            name="Grade 7",
+            name="Social Studies",
             markdown_description=(
-                "**الصف السابع  ·  Grade 7**\n\n"
-                "Middle school stage. Aleem will answer only from your Grade 7 "
-                "Ministry of Education textbooks."
+                "**الاجتماعيات  ·  Social Studies**\n\n"
+                "Aleem will answer only from your Ministry of Education "
+                "Social Studies textbook. Set your grade in the ⚙ panel."
             ),
         ),
         cl.ChatProfile(
-            name="Grade 8",
+            name="English",
             markdown_description=(
-                "**الصف الثاني المتوسط  ·  Grade 8**\n\n"
-                "Middle school stage. Aleem will answer only from your Grade 8 "
-                "Ministry of Education textbooks."
+                "**اللغة الإنجليزية  ·  English**\n\n"
+                "Aleem will answer only from your Ministry of Education "
+                "English textbook. Set your grade in the ⚙ panel."
             ),
         ),
         cl.ChatProfile(
-            name="Grade 10",
+            name="Digital Skills",
             markdown_description=(
-                "**الصف العاشر  ·  Grade 10**\n\n"
-                "High school stage. Aleem will answer only from your Grade 10 "
-                "Ministry of Education textbooks."
+                "**المهارات الرقمية  ·  Digital Skills**\n\n"
+                "Aleem will answer only from your Ministry of Education "
+                "Digital Skills textbook. Set your grade in the ⚙ panel."
             ),
         ),
     ]
@@ -171,50 +292,48 @@ async def chat_profiles() -> list[cl.ChatProfile]:
 
 @cl.on_chat_start
 async def on_chat_start() -> None:
-    profile = cl.user_session.get("chat_profile")  # e.g. "Grade 7"
-    grade = int(str(profile).split()[1])
-    cl.user_session.set("grade", grade)
+    # Subject comes from the chat-profile dropdown at the top.
+    profile = cl.user_session.get("chat_profile")  # e.g. "Islamic Studies"
+    subject = _profile_name_to_key(str(profile))
+    cl.user_session.set("subject", subject)
     cl.user_session.set("history", [])
 
-    chat_settings = await cl.ChatSettings(
-        [
-            Select(
-                id="subject",
-                label="Subject  ·  المادة",
-                values=SUBJECT_LABELS,
-                initial_index=0,
-            ),
-        ]
-    ).send()
+    # Grade is the sticky user setting: default to the user's last-used
+    # grade (from their most recent thread), else the lowest grade.
+    grade = await _last_used_grade()
+    if grade is None:
+        grade = DEFAULT_GRADE
+    cl.user_session.set("grade", grade)
 
-    initial_subject = _label_to_key(chat_settings["subject"])
-    cl.user_session.set("subject", initial_subject)
+    await _grade_settings(grade).send()
 
     # Tag the thread so on_chat_resume can restore grade/subject without
-    # walking the messages. Grade comes from the chat profile, subject
-    # from the settings dropdown — neither is recoverable from the
-    # transcript alone.
-    await _persist_thread_metadata(grade=grade, subject=initial_subject)
+    # walking the messages, and so _last_used_grade can read it back for
+    # the next chat. Neither value is recoverable from the transcript.
+    await _persist_thread_metadata(grade=grade, subject=subject)
 
-    await cl.Message(
-        content=(
-            f"**أهلاً بك في عليم  ·  Welcome to Aleem**\n\n"
-            f"- **Grade  ·  الصف:** {grade}\n"
-            f"- **Subject  ·  المادة:** {_key_to_label(initial_subject)}\n\n"
-            f"To change the subject, open the settings panel (⚙) at the top "
-            f"of the chat. Then ask your question — every answer will come "
-            f"from your Grade {grade} textbook only."
-        ),
-    ).send()
+    # Pin a Grade·Subject chip that stays visible while the chat is open.
+    chip = _make_context_chip(grade, subject)
+    cl.user_session.set("context_chip", chip)
+
+    welcome_msg = cl.Message(
+        content=_welcome_content(grade, subject),
+        elements=[chip],
+    )
+    cl.user_session.set("welcome_msg", welcome_msg)
+    await welcome_msg.send()
 
 
 @cl.on_settings_update
 async def on_settings_update(chat_settings: dict) -> None:
-    label = chat_settings.get("subject")
+    label = chat_settings.get("grade")
     if label:
-        key = _label_to_key(label)
-        cl.user_session.set("subject", key)
-        await _persist_thread_metadata(subject=key)
+        grade = _grade_label_to_int(label)
+        subject = cl.user_session.get("subject")
+        cl.user_session.set("grade", grade)
+        await _persist_thread_metadata(grade=grade)
+        await _refresh_context_chip(grade, subject)
+        await _refresh_welcome(grade, subject)
 
 
 @cl.on_chat_resume
@@ -229,38 +348,32 @@ async def on_chat_resume(thread: ThreadDict) -> None:
     """
     metadata = parse_thread_metadata(thread.get("metadata"))
 
-    # Grade: prefer metadata; fall back to the chat profile name.
+    # Subject: prefer metadata; fall back to the chat-profile name.
+    subject = metadata.get("subject")
+    if subject is None:
+        subject = _profile_name_to_key(str(cl.user_session.get("chat_profile")))
+    cl.user_session.set("subject", subject)
+
+    # Grade: prefer metadata; fall back to last-used, then default.
     grade = metadata.get("grade")
     if grade is None:
-        profile = cl.user_session.get("chat_profile")
-        try:
-            grade = int(str(profile).split()[1])
-        except (ValueError, IndexError, AttributeError):
-            grade = None
-    if grade is not None:
-        cl.user_session.set("grade", int(grade))
-
-    # Subject: prefer metadata; fall back to first SUBJECTS entry.
-    subject = metadata.get("subject") or SUBJECTS[0][0]
-    cl.user_session.set("subject", subject)
+        grade = await _last_used_grade()
+    if grade is None:
+        grade = DEFAULT_GRADE
+    grade = int(grade)
+    cl.user_session.set("grade", grade)
 
     # History: rebuild from persisted messages, capped to the rewrite
     # node's window so we don't blow the prompt budget.
     history = rebuild_history(thread, settings.memory.max_turns)
     cl.user_session.set("history", history)
 
-    # Re-send the settings widget so the subject dropdown reflects the
-    # persisted choice.
-    await cl.ChatSettings(
-        [
-            Select(
-                id="subject",
-                label="Subject  ·  المادة",
-                values=SUBJECT_LABELS,
-                initial_index=_subject_index(subject),
-            ),
-        ]
-    ).send()
+    # Re-send the grade widget so the ⚙ panel reflects the persisted choice.
+    await _grade_settings(grade).send()
+
+    # The pinned chip is replayed from the persisted welcome message, so we
+    # don't re-send it here (that would double it). It won't live-update
+    # after a resume — a cosmetic-only limitation.
 
 
 def _citation_elements(final_state: dict) -> list[cl.Text]:
@@ -291,8 +404,8 @@ async def on_message(message: cl.Message) -> None:
     if grade is None or subject is None:
         await cl.Message(
             content=(
-                "Please pick a subject from the settings panel (⚙) before "
-                "asking a question."
+                "Please pick a subject from the dropdown at the top and a "
+                "grade in the ⚙ panel before asking a question."
             ),
         ).send()
         return

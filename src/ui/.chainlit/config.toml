@@ -26,6 +26,8 @@ default_collapse_content = true
 default_expand_messages = false
 hide_cot = true
 custom_css = "/public/stylesheet.css"
+logo_file_url = "/public/aleem-logo.svg"
+default_avatar_file_url = "/public/aleem-avatar.svg"
 
 [meta]
 generated_by = "aleem-build-task"

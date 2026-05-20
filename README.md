@@ -40,7 +40,7 @@ layers**. The shape is locked in `docs/WORKFLOW_SANDBOX.md` (merged from
 `workflow-sandbox` in commit `f20595a`).
 
 ```
-User request + grade + subject (Chainlit ChatProfile)  +  chat history
+User request + subject (Chainlit ChatProfile) + grade (⚙ setting)  +  chat history
   ↓
 Tool-calling agent  (LangGraph create_react_agent, looped)
   • System prompt: tutor over Saudi MoE textbooks; cite every claim [n];

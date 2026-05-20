@@ -5,9 +5,12 @@ path is referenced from `.chainlit/config.toml`.
 
 ## Files
 
-| File             | Purpose                                                                  |
-| ---------------- | ------------------------------------------------------------------------ |
-| `stylesheet.css` | Aleem's CSS overrides — Arabic font loading and per-message auto-RTL.    |
+| File                     | Purpose                                                                  |
+| ------------------------ | ------------------------------------------------------------------------ |
+| `stylesheet.css`         | Aleem's CSS overrides — Arabic font loading and per-message auto-RTL.    |
+| `aleem-logo.svg`         | Header wordmark + mark. Set as `logo_file_url` in the config.            |
+| `aleem-avatar.svg`       | Assistant avatar. Set as `default_avatar_file_url` in the config.        |
+| `elements/ContextChip.jsx` | `cl.CustomElement` for the pinned Grade·Subject chip (fixed pill).     |
 
 ## Design notes
 

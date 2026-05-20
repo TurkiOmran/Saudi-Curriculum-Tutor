@@ -9,12 +9,14 @@ runs the post-hoc verifier and renders citation source cards.
 
 | File                          | What it does                                                                                                       |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `app.py`                      | Chainlit entrypoint — chat profiles, settings panel, auth stub, `@cl.on_chat_start` / `@cl.on_chat_resume` / `@cl.on_message`. |
+| `app.py`                      | Chainlit entrypoint — subject chat profiles, grade settings panel, context chip, auth stub, `@cl.on_chat_start` / `@cl.on_chat_resume` / `@cl.on_message`. |
 | `persistence.py`              | Wraps Chainlit's `SQLAlchemyDataLayer` over `./.aleem/chats.db`. Exposes `make_data_layer()` and the pure `rebuild_history()` helper used on resume. |
 | `schema.sql`                  | `CREATE TABLE IF NOT EXISTS` statements for the five tables (`users`, `threads`, `steps`, `elements`, `feedbacks`) the data layer queries. Applied once on launch. |
 | `chainlit.md`                 | Markdown shown on the Chainlit landing screen (the welcome content).                                              |
-| `.chainlit/config.toml`       | Chainlit config — wires up the custom CSS and sets the app title.                                                  |
+| `.chainlit/config.toml`       | Chainlit config — app title, custom CSS, and the Aleem logo + default assistant avatar.                            |
 | `public/stylesheet.css`       | Arabic font + per-message auto-RTL. See `public/README.md`.                                                        |
+| `public/aleem-logo.svg` / `public/aleem-avatar.svg` | Header logo + assistant avatar, referenced from `config.toml`.                              |
+| `public/elements/ContextChip.jsx` | `cl.CustomElement` rendering the pinned Grade·Subject chip (fixed-position pill).                              |
 
 ## Run
 
@@ -108,15 +110,25 @@ for ~15s and the status bar can't update until the load completes.
 The prewarm skips itself when every grade collection is empty — see
 `src/retrieval/prewarm.py`.
 
-## Subject ↔ key mapping
+## Grade & subject selection
 
-The dropdown shows bilingual labels (e.g. `العربية  ·  Arabic`) but
-stores an internal `key` (`"arabic"`) in the session. The agent's tool
-reads grade + subject from a `contextvars.ContextVar` set by
-`set_request_context()` at the top of `on_message`, so the LLM-facing
-`retrieve(query)` signature stays narrow.
+Chainlit gives two selector surfaces; Aleem maps one to each axis:
 
-Keys: `arabic`, `islamic_studies`, `social_studies`, `english`, `math`.
+- **Subject → chat profile** (the top dropdown). One profile per subject;
+  the profile name maps back to an internal `key` via
+  `_profile_name_to_key()`. Picking a different subject starts a new chat.
+- **Grade → ⚙ settings panel** (a `Select`). Grade is the sticky "user
+  setting": a new chat defaults to the grade of the user's most recent
+  thread (`_last_used_grade()`, read from thread metadata), so it rarely
+  needs re-picking. Changing it mid-chat updates the pinned context chip.
+
+Both are persisted to thread metadata at `on_chat_start` and restored on
+`on_chat_resume`. The agent's tool reads grade + subject from a
+`contextvars.ContextVar` set by `set_request_context()` at the top of
+`on_message`, so the LLM-facing `retrieve(query)` signature stays narrow.
+
+Subject keys: `islamic_studies`, `social_studies`, `english`,
+`digital_skills`. Grades: `4`, `7`, `8`, `10`.
 
 ## Not here
 
