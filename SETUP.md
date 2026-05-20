@@ -2,6 +2,11 @@
 
 How to get Aleem running on your machine from a fresh clone.
 
+**Docker + `just` is the primary, supported path** — one image, same in
+dev and deploy. The bare-metal `uv` flow (§6) is kept as a fast-restart
+fallback for heavy local iteration, but everything below assumes Docker
+unless a section says otherwise.
+
 > **Current build status:** The query path is **one tool-calling agent +
 > topical verifier** per `docs/WORKFLOW_SANDBOX.md`.
 > `src/graph/agent.py::run_agent` drives a `create_react_agent` whose
@@ -24,33 +29,23 @@ How to get Aleem running on your machine from a fresh clone.
 
 | Requirement      | Version / Notes                                                            |
 | ---------------- | -------------------------------------------------------------------------- |
-| **Python**       | **3.11** exactly (pinned in `.python-version`). 3.12+ is *not* tested.     |
-| **uv**           | Recommended package manager. Resolves + installs the full dep tree in seconds. |
+| **Docker**       | Docker Desktop, or `brew install colima docker docker-compose`. Must support Compose v2.30+ (`docker compose …`, `env_file: format: raw`). |
+| **just**         | `brew install just` (macOS) or see <https://github.com/casey/just>. Thin task-runner over `docker compose` — every command below goes through it. |
 | **git**          | Any recent version.                                                        |
-| **OpenRouter**   | Optional. Needed only for real LLM answers — see §5. `backend: fake` works without it. |
-| **HuggingFace**  | Optional. Needed only when the (collaborator-owned) ingestion pipeline runs Jina-v4. The agentic pipeline never touches HF. |
-| **GPU**          | Optional. Everything in this branch runs on CPU. ALLaM-7B local deployment will benefit from a GPU; OpenRouter offloads that. |
-| **Disk**         | ~5 GB free — torch + model caches dominate once HF downloads land.         |
+| **OpenRouter**   | Optional. Needed only for real LLM answers — see §5. `backend: fake` (the default) works without it. |
+| **Disk**         | ~5 GB free — torch + the Jina-v4 / reranker model caches dominate.         |
 
-### Install uv
+That's the whole list for the Docker path. Python, `uv`, and the
+dependency tree all live **inside the image** — you do not install them
+on the host.
 
-```bash
-# macOS (Homebrew)
-brew install uv
-
-# macOS / Linux (one-line installer)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Windows (PowerShell)
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-
-# Verify
-uv --version       # uv 0.11.x or newer
-```
-
-> uv manages the Python interpreter for you — you do **not** need to
-> install Python 3.11 separately. `uv sync` (§3) downloads CPython 3.11
-> if it's missing, matching `.python-version`.
+> **Bare-metal extras (§6 only):** if you skip Docker and run via `uv`,
+> you'll also want **uv** (`brew install uv`) and **~5 GB disk** for the
+> local `.venv`. `uv` manages CPython 3.11 for you (pinned in
+> `.python-version`); 3.12+ is not tested. **HuggingFace** (`HF_TOKEN`)
+> and **Mistral** (`MISTRAL_API_KEY`) keys are only needed when the
+> collaborator-owned ingestion pipeline runs — the query path never
+> touches them.
 
 ---
 
@@ -61,59 +56,110 @@ git clone <repo-url> Aleem
 cd Aleem
 ```
 
-That's the whole step. `uv` handles the venv in §3.
-
 ---
 
-## 2.5 Run with Docker *(recommended — dev/prod parity)*
-
-The fastest path to a running Aleem. The same image (built from the
-repo's `Dockerfile`) ships unchanged to Fly.io, Cloud Run, Render, or a
-VM — only env vars differ in prod.
-
-### Prerequisites
-
-| Tool             | macOS install                     | Notes                                                |
-| ---------------- | --------------------------------- | ---------------------------------------------------- |
-| **Docker**       | Docker Desktop, or `brew install colima docker docker-compose` | Needs to support Compose v2 (`docker compose …`).    |
-| **just**         | `brew install just`               | Thin task-runner over `docker compose`. Optional but assumed by the recipes below. |
-
-### One-shot startup
+## 3. Configure environment variables
 
 ```bash
 cp .env.example .env
-# Generate the required Chainlit session secret and paste into .env:
-uv run chainlit create-secret      # or: openssl rand -hex 32
-just build                         # first build ~3–5 min; cached after
-just up                            # → http://localhost:8000
+# Generate the required Chainlit session secret and paste it into .env:
+uv run chainlit create-secret      # or, with no uv on the host: openssl rand -hex 32
 ```
 
-Everything else lives in `just`:
+Open `.env` and set whichever keys you need. All are optional for the
+default `backend: fake` flow **except** the Chainlit secret:
+
+| Var                    | When required                                                  | What it does                                                          |
+| ---------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `CHAINLIT_AUTH_SECRET` | Always (the UI registers an auth callback)                     | Signs the session cookie. Generate with `openssl rand -hex 32`.       |
+| `OPENROUTER_API_KEY`   | Only when `llm.backend: openrouter`                            | Real LLM calls. Get a key at <https://openrouter.ai/keys>.            |
+| `HF_TOKEN`             | Embeddings / reranker model download (gated Jina-v4)           | Accept the license on the HF model page first.                        |
+| `MISTRAL_API_KEY`      | Only when running the ingest pipeline (`just ingest`)          | Powers the Mistral OCR call. Key at <https://console.mistral.ai/api-keys/>. |
+| `CHROMA_DIR`           | No (Docker sets `/app/chroma`; bare-metal defaults to `./chroma`) | Override where Chroma persists its SQLite + parquet files.         |
+
+> The container reads `.env` with `format: raw` (no `$`-interpolation),
+> so a `CHAINLIT_AUTH_SECRET` containing literal `$` passes through
+> untouched. This needs Compose v2.30+.
+
+---
+
+## 4. Run with Docker (the main path)
+
+```bash
+just build      # first build ~3–5 min (torch + transformers); cached after
+just init       # create the per-grade Chroma collections (one-time)
+just up          # → http://localhost:8000
+```
+
+Open <http://localhost:8000>. Pick a grade card, then optionally change
+subject in the ⚙ settings panel, then ask any question.
+
+Everything else is a `just` recipe (run `just` with no args to list them):
 
 ```bash
 just logs        # tail chainlit + agent logs
 just restart     # bounce after a config change
 just shell       # interactive shell in the running container
-just down        # stop + remove (volumes survive)
-just init        # initialise Chroma collections (one-time)
-just ingest      # run the Mistral OCR → embed pipeline
-just test        # run pytest inside the container
+just down        # stop + remove (bind mounts and the hf-cache volume survive)
+just init        # (re)initialise Chroma collections — idempotent
+just ingest      # run the Mistral OCR → embed pipeline (pass-through args)
+just test        # run pytest inside the container (pass-through args)
 just lint        # run ruff inside the container
-just dev         # bare-metal fallback — runs Chainlit via local .venv
+just dev         # bare-metal fallback — runs Chainlit via local .venv (see §6)
 ```
+
+### Verify the install
+
+```bash
+just test        # ~65 tests, all fake-backend, ~4s
+just lint        # ruff check src/ tests/ scripts/
+```
+
+Both should report green.
+
+### What you see per query (UI)
+
+- A single status line at the top of the answer that **updates in place**
+  as the agent runs: starts at `⏳ Thinking…`, becomes
+  `🔎 Searching: "<verbatim query>"` for each retrieve call, and
+  **disappears** once the final answer renders (ChatGPT / Claude.ai
+  pattern).
+- Real answers stream token-by-token from the agent's chat-model node.
+- Citation cards (`[1]`, `[2]`, …) expand to show the source chunk's
+  text, lesson title, and page.
+- Off-topic answers and ceiling-hit refusals replace the streamed text
+  with a warm, tutor-voiced refusal that suggests related topics drawn
+  from whatever chunks were retrieved (`docs/WORKFLOW_SANDBOX.md` §3).
+- Greetings / small talk: the agent simply doesn't call retrieve and
+  produces a short conversational reply.
+
+The full per-turn trace — tool calls, citation flags, verifier verdict,
+latency breakdown — lives in `logs/queries-$(date +%F).jsonl`
+(bind-mounted to the host). `just logs` tails the container; the JSONL is
+the structured record.
 
 ### What gets baked vs. mounted
 
 - **Baked into the image** so `docker run aleem:dev` works out of the
   box: `src/`, `prompts/`, `config.yaml`, `chroma/`, `Data/`.
 - **Bind-mounted from the host** by `docker-compose.yml` so dev edits
-  take effect live: `src/`, `prompts/`, `config.yaml`, `chroma/`,
-  `Data/`, `.aleem/` (chat history), `logs/`.
+  take effect live: `src/`, `tests/`, `scripts/`, `prompts/`,
+  `config.yaml`, `pyproject.toml`, plus the stateful `chroma/`, `Data/`,
+  `.aleem/` (chat history), and `logs/`.
 - **Named volume** (`hf-cache`) holds the ~3 GB Jina-v4 + reranker
   weights so they survive image rebuilds.
 
-In a prod deploy you'd drop the live-code overlays and rely on the
-baked copies, or swap `chroma/` for a network-mounted volume.
+In a prod deploy you'd drop the live-code overlays and rely on the baked
+copies, or swap `chroma/` for a network-mounted volume.
+
+### Persistent chat history
+
+Past chats appear in the left sidebar and survive browser refresh. State
+lives in `./.aleem/chats.db` (SQLite, gitignored, bind-mounted). The
+schema is applied on first launch by `src/ui/persistence.py`. To wipe
+local history: `rm -rf .aleem/`. The current build uses a single
+hardcoded local user (`identifier = "local"`) — there's no login screen;
+real auth is deferred to deploy.
 
 ### Building from Apple Silicon for an amd64 cloud target
 
@@ -125,61 +171,12 @@ docker buildx build --platform linux/amd64 -t aleem:amd64 .
 
 ---
 
-## 3. Install dependencies
-
-All deps are locked in `uv.lock` (committed) with exact versions and wheel
-hashes. `uv sync` installs into a project-local `.venv/`, producing a
-byte-identical environment for everyone on the team and CI.
-
-```bash
-uv sync                     # runtime + dev deps (pytest, ruff)
-```
-
-First run takes ~2 min (torch is the heavy item). Subsequent runs are
-near-instant.
-
-### Pip fallback (no uv)
-
-```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-`requirements.txt` is auto-generated from `uv.lock` — do not hand-edit.
-To regenerate after a dep bump:
-
-```bash
-uv export --format requirements-txt --no-hashes --no-emit-project \
-  --output-file requirements.txt
-```
-
----
-
-## 4. Configure environment variables
-
-```bash
-cp .env.example .env
-```
-
-Open `.env` and set whichever keys you need. All are optional for the
-default `backend: fake` flow:
-
-| Var                    | When required                                                  | What it does                                                          |
-| ---------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `OPENROUTER_API_KEY`   | Only when `llm.backend: openrouter`                            | Real LLM calls. Get a key at <https://openrouter.ai/keys>.            |
-| `HF_TOKEN`             | Embeddings / reranker model download (gated Jina-v4)           | Accept the license on the HF model page first.                        |
-| `MISTRAL_API_KEY`      | Only when running the ingest pipeline (`python -m src.ingest`) | Powers the Mistral OCR call. Key at <https://console.mistral.ai/api-keys/>. |
-| `CHROMA_DIR`           | No (defaults to `./chroma`)                                    | Override where Chroma persists its SQLite + parquet files.            |
-| `CHAINLIT_AUTH_SECRET` | Always (the UI registers an auth callback)                     | Signs the session cookie. Generate one with `uv run chainlit create-secret` and paste into `.env`. |
-
----
-
 ## 5. Choose your LLM backend (`config.yaml`)
 
-`config.yaml` lives at the repo root. The base shape is locked in
-`RESPONSE_WORKFLOW.md` L17; the `agent:` and `verifier:` blocks are
-locked in `docs/WORKFLOW_SANDBOX.md` §8.
+`config.yaml` lives at the repo root and is bind-mounted into the
+container, so an edit + `just restart` is enough — no rebuild. The base
+shape is locked in `RESPONSE_WORKFLOW.md` L17; the `agent:` and
+`verifier:` blocks are locked in `docs/WORKFLOW_SANDBOX.md` §8.
 
 ```yaml
 llm:
@@ -212,7 +209,7 @@ via `FakeMessagesListChatModel` — see `tests/test_agent.py`.
 ### `backend: openrouter` *(real LLM)*
 
 1. Add `OPENROUTER_API_KEY=…` to `.env`.
-2. Flip `backend: openrouter` in `config.yaml`.
+2. Flip `backend: openrouter` in `config.yaml`, then `just restart`.
 3. About the model:
    - `meta-llama/llama-3.3-70b-instruct` (no `:free`) → paid route,
      ~$0.001/query. Reliable, doesn't 429. **Recommended.**
@@ -233,200 +230,179 @@ until a local target is decided.
 
 ---
 
-## 6. Initialise the Chroma collections
+## 6. Bare-metal alternative (`uv`) — secondary
 
-The collections need to exist so retrieve has a real backend to query
-(it falls back to stub chunks if the per-grade collection is empty,
-which is what the test suite relies on).
+Skip Docker entirely when you want sub-second restarts during heavy
+iteration. This path runs everything against a project-local `.venv`.
+`just dev` wraps the Chainlit launch; the rest is plain `uv`.
 
-```bash
-uv run python -m src.retrieval.init_chroma
-```
+### Prerequisites
 
-Expected output:
-```
-HH:MM:SS  INFO  chroma dir: /…/Aleem/chroma
-HH:MM:SS  INFO  grade_4   created  (count=0)
-HH:MM:SS  INFO  grade_7   created  (count=0)
-HH:MM:SS  INFO  grade_8   created  (count=0)
-HH:MM:SS  INFO  grade_10  created  (count=0)
-HH:MM:SS  INFO  done — 4 collections ready
-```
+- **uv** — `brew install uv`, or
+  `curl -LsSf https://astral.sh/uv/install.sh | sh`
+  (Windows: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`).
+  Verify with `uv --version` (0.11.x+).
 
-Idempotent — safe to re-run.
+### Install dependencies
 
----
-
-## 7. Verify the install
-
-Three fast checks, no browser needed:
+All deps are locked in `uv.lock` (committed) with exact versions and
+wheel hashes. `uv sync` installs into `.venv/`, byte-identical for
+everyone on the team and CI.
 
 ```bash
-# (a) Run the agent end-to-end with the fake backend — no network.
-uv run python scripts/smoke_run.py "what is photosynthesis?"
-
-# (b) Run the test suite (~4s, 65 tests, all fake-backend).
-uv run pytest
-
-# (c) Lint check.
-uv run ruff check src/ tests/ scripts/
+uv sync                     # runtime + dev deps (pytest, ruff)
 ```
 
-Both `pytest` and `ruff check` should report green. The smoke run prints
-the canned stub answer, the (empty) tool-call list, the verifier verdict,
-and the latency dict. With `backend: openrouter` the smoke run drives the
-real agent, prints the verbatim search queries it made, and reports the
-verifier's verdict on the grounded answer.
+First run takes ~2 min (torch is the heavy item); subsequent runs are
+near-instant.
 
----
-
-## 8. Run the Chainlit UI
+#### Pip fallback (no uv)
 
 ```bash
-cd src/ui
-PYTHONPATH=../.. uv run chainlit run app.py
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-Open <http://localhost:8000>. Pick a grade card, then optionally change
-subject in the ⚙ settings panel, then ask any question.
-
-### What you see per query
-
-- A single status line at the top of the answer that **updates in place**
-  as the agent runs: starts at `⏳ Thinking…`, then becomes
-  `🔎 Searching: "<verbatim query>"` for each retrieve call, and
-  **disappears** once the final answer renders (ChatGPT / Claude.ai
-  pattern).
-- Real answers stream token-by-token from the agent's chat-model node.
-- Citation cards (`[1]`, `[2]`, …) expand to show the source chunk's
-  text, lesson title, and page.
-- Off-topic answers and ceiling-hit refusals replace the streamed text
-  with a warm, tutor-voiced refusal that suggests related topics drawn
-  from whatever chunks were retrieved (docs/WORKFLOW_SANDBOX.md §3).
-- Greetings / small talk: the agent simply doesn't call retrieve and
-  produces a short conversational reply.
-
-### What you don't see
-
-The full per-turn trace — tool calls, citation flags, verifier verdict,
-latency breakdown — lives in `logs/queries-$(date +%F).jsonl`. Tail it
-in a separate terminal:
+`requirements.txt` is auto-generated from `uv.lock` — do not hand-edit.
+Regenerate after a dep bump:
 
 ```bash
-tail -f logs/queries-$(date +%F).jsonl
-```
-
-### Persistent chat history
-
-Past chats appear in the left sidebar and survive browser refresh. State
-lives in `./.aleem/chats.db` (SQLite, gitignored). The schema is applied
-on first launch by `src/ui/persistence.py`. To wipe local history:
-
-```bash
-rm -rf .aleem/
-```
-
-The current build uses a single hardcoded local user (`identifier =
-"local"`) so the data layer has someone to scope threads to — there's
-no login screen. Real auth is deferred to deploy.
-
----
-
-## 9. Useful commands cheat-sheet
-
-```bash
-# Install / sync deps
-uv sync
-
-# Add a dep (updates pyproject.toml + uv.lock)
-uv add <package>
-
-# Regenerate requirements.txt
 uv export --format requirements-txt --no-hashes --no-emit-project \
   --output-file requirements.txt
+```
 
-# (Re)initialise Chroma
-uv run python -m src.retrieval.init_chroma
+### Initialise Chroma + verify
 
-# Smoke-run the pipeline (no UI)
-uv run python scripts/smoke_run.py "your question here"
+```bash
+uv run python -m src.retrieval.init_chroma          # create collections (idempotent)
+uv run python scripts/smoke_run.py "what is photosynthesis?"   # agent end-to-end, no network
+uv run pytest                                       # full suite
+uv run ruff check src/ tests/ scripts/              # lint
+```
 
-# Tests
-uv run pytest                                        # full suite
-uv run pytest tests/test_agent.py                    # one file
-uv run pytest -vv -s                                 # verbose
+The smoke run prints the canned stub answer, the (empty) tool-call list,
+the verifier verdict, and the latency dict. With `backend: openrouter`
+it drives the real agent and prints the verbatim search queries it made.
 
-# Lint / format
-uv run ruff check src/ tests/ scripts/
-uv run ruff check --fix src/ tests/ scripts/
-uv run ruff format src/ tests/ scripts/
+### Run the Chainlit UI
 
-# Launch the Chainlit UI
+```bash
+just dev
+# equivalently, by hand:
 (cd src/ui && PYTHONPATH=../.. uv run chainlit run app.py)
-(cd src/ui && PYTHONPATH=../.. uv run chainlit run app.py --port 8765)
+```
 
-# Tail today's query log
-tail -f logs/queries-$(date +%F).jsonl
+Open <http://localhost:8000>. Chainlit must be launched from `src/ui/`
+so it picks up `.chainlit/config.toml` (see `src/ui/app.py:18`).
+
+---
+
+## 7. Daily commands cheat-sheet
+
+```bash
+# --- Docker (primary) ---
+just build       # build / rebuild the image
+just up          # start in background → :8000
+just down        # stop + remove (volumes survive)
+just restart     # bounce after a config.yaml edit
+just logs        # tail container logs
+just shell       # shell inside the container
+just init        # (re)initialise Chroma collections
+just ingest      # Mistral OCR → embed pipeline (e.g. just ingest --help)
+just test        # pytest in container (e.g. just test -k retrieval)
+just lint        # ruff in container
+
+# --- Bare-metal (uv) ---
+just dev                                             # Chainlit via local .venv
+uv sync                                              # install / sync deps
+uv add <package>                                     # add a dep (updates uv.lock)
+uv run python -m src.retrieval.init_chroma           # (re)init Chroma
+uv run python scripts/smoke_run.py "your question"   # smoke-run, no UI
+uv run pytest                                        # full suite
+uv run ruff check src/ tests/ scripts/               # lint
+
+# --- Either path ---
+tail -f logs/queries-$(date +%F).jsonl               # tail today's query log
 ```
 
 ---
 
-## 10. Troubleshooting
+## 8. Troubleshooting
 
-**`chainlit: command not found`**
-Forgot `uv run`, or didn't activate the venv. Either run
-`uv run chainlit run app.py` or do `source .venv/bin/activate` first.
+### Docker path
 
-**`ModuleNotFoundError: No module named 'src'`**
-Forgot `PYTHONPATH=../..` when running Chainlit from `src/ui/`, or you're
-not at the repo root when running `uv run python -m src.retrieval.init_chroma`.
+**`just: command not found`**
+`brew install just` (or see <https://github.com/casey/just>).
 
-**`uv: command not found`**
-uv isn't on PATH. Re-run the installer (§1) or restart your shell.
+**Compose rejects `env_file: format: raw` / `path:`**
+Your Docker is older than Compose v2.30. Upgrade Docker Desktop, or on
+colima `brew upgrade docker docker-compose`.
 
-**Chainlit drops a stray `chainlit.md` or `.chainlit/` at the repo root**
-You launched Chainlit from the repo root instead of from `src/ui/`. Stop
-the server, delete the stray files at root, then `cd src/ui` before
-launching. `.gitignore` already excludes the repo-root `.chainlit/`.
+**`CHAINLIT_AUTH_SECRET` errors at startup**
+You didn't fill `.env`. Generate one (`openssl rand -hex 32`), paste it
+in, then `just restart`.
+
+**HF model download repeats on every rebuild**
+The `hf-cache` named volume isn't being reused — check you're starting
+via `just up` / `docker compose` (which mounts it), not a bare
+`docker run` without `-v hf-cache:/cache/huggingface`.
+
+### Backend / LLM
 
 **HTTP 429 / "rate-limited upstream" from OpenRouter**
-You're on a `:free` model and the third-party upstream provider is
-throttling. Two fixes:
-- Switch to the paid route (drop `:free` from the model id; costs
-  ~$0.001/query and stops the throttling). Requires credits on your
-  OpenRouter account — `is_free_tier: false` on `/api/v1/auth/key`.
-- Switch to a smaller / less-popular free model
-  (`nvidia/nemotron-nano-9b-v2:free`, `openai/gpt-oss-20b:free`).
+You're on a `:free` model and the upstream provider is throttling. Switch
+to the paid route (drop `:free`; ~$0.001/query, requires credits), or to
+a smaller free model (`nvidia/nemotron-nano-9b-v2:free`,
+`openai/gpt-oss-20b:free`).
 
 **HTTP 404 / "No endpoints found for `<model>:free`"**
 That free endpoint was retired. Refresh the model id against
 <https://openrouter.ai/api/v1/models> and pick a currently-live one.
 
 **`Structured Output response does not have a 'parsed' field`** *(verifier path)*
-A provider hiccup — the LLM returned an empty structured-output payload.
-The verifier catches this in `src/graph/verifier.py` and falls back to
-`on_topic=True` with the error type in the `reason` field, so the answer
-still ships. If logs show this happening often, set `verifier.model` to a
-more reliable model id in `config.yaml`.
+A provider hiccup — empty structured-output payload. The verifier catches
+this in `src/graph/verifier.py` and falls back to `on_topic=True` with the
+error type in `reason`, so the answer still ships. If it's frequent, set
+`verifier.model` to a more reliable model id in `config.yaml`.
 
-**Chroma "missing embedding function on `get_collection`"**
-Don't call `client.get_collection(...)` directly. Use
-`src.retrieval.chroma_client.get_collection(grade)` — it re-attaches Jina-v4
-each open, which Chroma can't persist.
+**HuggingFace 401 / 403 when downloading Jina-v4** *(ingestion only)*
+You haven't accepted the model license. Visit
+<https://huggingface.co/jinaai/jina-embeddings-v4>, click **Agree**, and
+make sure `HF_TOKEN` matches that account.
+
+### Bare-metal (`uv`) path
+
+**`chainlit: command not found`**
+Forgot `uv run`, or didn't activate the venv. Use `just dev`, or
+`uv run chainlit run app.py`, or `source .venv/bin/activate` first.
+
+**`ModuleNotFoundError: No module named 'src'`**
+Forgot `PYTHONPATH=../..` when running Chainlit from `src/ui/`, or you're
+not at the repo root when running `uv run python -m src.retrieval.init_chroma`.
+`just dev` sets this for you.
+
+**`uv: command not found`**
+uv isn't on PATH. Re-run the installer (§6) or restart your shell.
+
+**Chainlit drops a stray `chainlit.md` or `.chainlit/` at the repo root**
+You launched from the repo root instead of `src/ui/`. Stop the server,
+delete the stray files, then `cd src/ui` before launching. `just dev`
+already cd's correctly.
 
 **`pip install` fails on `torch`**
 On Apple Silicon, `torch==2.7.1` resolves to a universal wheel. On older
 Linux, add `--extra-index-url https://download.pytorch.org/whl/cpu` to
 force the CPU build.
 
-**HuggingFace 401 / 403 when downloading Jina-v4** *(later, when ingestion runs)*
-You haven't accepted the model license. Visit
-<https://huggingface.co/jinaai/jina-embeddings-v4>, click **Agree**, and
-make sure `HF_TOKEN` in your `.env` matches that account.
+**Chroma "missing embedding function on `get_collection`"**
+Don't call `client.get_collection(...)` directly. Use
+`src.retrieval.chroma_client.get_collection(grade)` — it re-attaches
+Jina-v4 each open, which Chroma can't persist.
 
 ---
 
-## 11. Where to go next
+## 9. Where to go next
 
 | If you want to…                       | Open                                       |
 | ------------------------------------- | ------------------------------------------ |
@@ -441,3 +417,5 @@ make sure `HF_TOKEN` in your `.env` matches that account.
 | Add or read tests                     | `tests/README.md`                          |
 | Edit a prompt                         | `prompts/README.md` + `prompts/*.j2`       |
 | See what's in `chroma/`               | `chroma/README.md`                         |
+</content>
+</invoke>
