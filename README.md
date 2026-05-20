@@ -2,76 +2,81 @@
 
 **A curriculum-grounded RAG tutor for Saudi school students.**
 
-Aleem ("knowledgeable" in Arabic) is an AI tutor that answers student questions using *only* the content of their official Saudi Ministry of Education textbooks. Every answer is traceable to a specific lesson and page in the student's grade-level book — no foreign curriculum content, no hallucinations, no second-guessing what will show up on the exam.
+Aleem ("knowledgeable" in Arabic) answers a student's questions using *only* the content of their official Saudi Ministry of Education textbooks. Every answer traces back to a specific lesson and page in the student's grade-level book — and when the textbook doesn't cover the question, Aleem says so instead of inventing an answer.
 
 ---
 
-## The Problem
+## The problem
 
-Saudi students who use general-purpose LLMs (ChatGPT, Gemini, Copilot) for homework get answers that are *plausible* but *misaligned* with their official curriculum:
+Saudi students who use general-purpose LLMs for homework get answers that are *plausible* but *misaligned* with their official curriculum: different terminology than their textbook, examples from foreign curricula, and material from the wrong grade level. That forces them to second-guess every answer — and risks memorizing content that gets marked wrong on national exams.
 
-- Different terminology than their textbook uses.
-- Examples drawn from foreign curricula.
-- Material from the wrong grade level.
-
-This forces students to second-guess every answer and risks them memorizing content that will be marked wrong on national exams.
-
-**Aleem's contract:** if the answer isn't in your textbook, the system says so — instead of inventing one.
+**Aleem's contract:** if the answer isn't in your textbook, the system tells you — and points you to the lessons in your grade that *are* relevant.
 
 ---
 
-## What Makes Aleem Different
+## What makes Aleem different
 
-| Feature | Why it matters |
+| | Why it matters |
 | --- | --- |
-| **Grade-isolated retrieval** | A Grade 4 student is *structurally* incapable of receiving Grade 10 content. Each grade has its own vector index. |
-| **Curriculum-grounded by construction** | The corpus is *only* official MoE textbooks downloaded from [ien.edu.sa](https://ien.edu.sa). Nothing else. |
+| **Grade-isolated retrieval** | A Grade 4 student is *structurally* unable to receive Grade 10 content — each grade has its own vector index. |
+| **Grounded by construction** | The corpus is *only* official MoE textbooks from [ien.edu.sa](https://ien.edu.sa). Nothing else. |
 | **Lesson-level citations** | Every answer carries inline `[n]` markers linking to the exact lesson, page, and passage. |
-| **Refusal as a feature** | When the textbook doesn't cover the question, the system politely refuses and surfaces related lessons from the student's grade. |
-| **Bilingual (Arabic + English)** | Designed for both Arabic-medium subjects and the English curriculum. |
-| **Saudi model for Saudi content** | Generation runs on **ALLaM**, the Saudi national LLM, trained natively on Arabic. |
+| **Refusal as a feature** | When the textbook doesn't cover a question, Aleem refuses politely and surfaces related lessons from the student's grade. |
+| **Bilingual** | Ask in Arabic *or* English — Aleem replies in the language you asked, while still retrieving and citing the Arabic textbook. |
+| **Model-agnostic** | The generator is a pluggable backend (`fake` / `openrouter` / `ollama`) — swap models without touching the pipeline. |
 
 ---
 
-## Architecture
+## Screenshots
 
-Aleem uses **one tool-calling agent + one tool + two post-hoc safety
-layers**. The shape is locked in `docs/WORKFLOW_SANDBOX.md` (merged from
-`workflow-sandbox` in commit `f20595a`).
+A walk through one session — Grade 8, *Digital Skills*. Pick a subject, ask in either language, get cited answers, and see refusal in action.
+
+**1. Pick a subject and grade.** Each grade has its own textbook index, so retrieval is scoped from the very first message.
+
+![Aleem welcome screen with the selected subject (Digital Skills) and grade (8) shown in the header](docs/assets/grade-subject.png)
+
+**2. Ask in Arabic — get a cited answer.** Inline numbered markers link to the exact page; the side card shows the source passage and its `ien.edu.sa` origin.
+
+![Aleem answering an Arabic question with inline numbered citations and a side citation card showing the source page](docs/assets/hero-chat.png)
+
+**3. Ask in English — Aleem still searches the Arabic textbook.** The "Searching:" card shows the agent querying the source material in Arabic, regardless of the question's language.
+
+![The Searching card showing an English question being searched against the Arabic textbook](docs/assets/bilingual-search.png)
+
+**4. Off-curriculum? Aleem refuses — in your language.** Building a RAG pipeline isn't in the Grade 8 book, so Aleem declines **in English** and redirects to lessons that *are* covered.
+
+![Aleem answering an English question in English, refusing because the topic isn't in the Grade 8 textbook, then suggesting in-curriculum lessons](docs/assets/refusal.png)
+
+---
+
+## How it works
+
+One tool-calling agent, one tool, two post-hoc safety layers. Shape locked in `docs/WORKFLOW_SANDBOX.md`. The student picks a subject (Chainlit chat profile) and grade (⚙ setting); retrieval is scoped to that grade's index.
+
+![Aleem RAG tutor pipeline: student question to agent, looping through textbook search and answer verification, ending in a cited answer or a polite refusal](docs/assets/howItWorks.png)
+
+*The agent loops — search, read, search again (up to 4×) — then a verifier checks the answer against its sources before it ships. If nothing in the textbook supports it, or the answer drifts off-topic, Aleem refuses and suggests related lessons instead.*
+
+The exact pipeline:
 
 ```
-User request + subject (Chainlit ChatProfile) + grade (⚙ setting)  +  chat history
+question + subject + grade + chat history
   ↓
-Tool-calling agent  (LangGraph create_react_agent, looped)
-  • System prompt: tutor over Saudi MoE textbooks; cite every claim [n];
-    answer ONLY from chunks; resolve references from history; use topic
-    terms for retrieval; read relevance scores; refuse in own voice if
-    chunks don't cover the question.
+Tool-calling agent  (LangGraph create_react_agent, looped, max 4 retrieve calls)
+  • Tutor over Saudi MoE textbooks; cite every claim [n]; answer ONLY from
+    retrieved chunks; refuse in its own voice when the chunks don't cover it.
   • Tool: retrieve(query) → Chroma top-20 → Jina rerank top-5
-                          → "[n] (relevance: 0.94) ..."
-  • Budget: max 4 retrieve calls per turn
   ↓
 Streamed answer with inline [n] markers
   ↓
-Layer 2: Citation parse  ── structural: out-of-range [n]? missing
-                            citations? Flagged in the log; never repaired.
+Layer 2 — Citation parse:   structural check (out-of-range / missing [n]); flagged, never silently repaired.
+Layer 3 — Topical verifier: one structured-output LLM call ("is this answer about a topic the
+                            chunks actually discuss?"); on off-topic → refuse + topic suggestions.
   ↓
-Layer 3: Topical verifier  ── one cheap structured-output LLM call
-                              ("is this answer about a topic the chunks
-                              actually discuss?"). Default-on; on
-                              off_topic → refuse immediately in the
-                              agent's voice + topic suggestions.
-  ↓
-Chainlit renders the answer + side citation cards
-  ↓
-L18 JSONL log: tool calls, citation flags, verifier verdict,
-               rerank scores, latency
+Chainlit renders the answer + side citation cards   →   JSONL log (tool calls, flags, verdict, scores, latency)
 ```
 
-See `docs/WORKFLOW_SANDBOX.md` (§3 diagram, §4 safety model, §12 eval bar) for
-the full design. `RESPONSE_WORKFLOW.md` (L1–L22) describes the older
-multi-stage pipeline that motivated the new shape — preserved as the
-historical comparison baseline.
+See `docs/WORKFLOW_SANDBOX.md` for the full design (§3 diagram, §4 safety model, §12 eval bar). `docs/RESPONSE_WORKFLOW.md` preserves the earlier two-graph pipeline as a historical baseline.
 
 ---
 
@@ -79,183 +84,113 @@ historical comparison baseline.
 
 | Layer | Choice |
 | --- | --- |
-| **OCR** | [Mistral OCR](https://docs.mistral.ai/studio-api/document-processing/basic_ocr/) (`mistral-ocr-latest`) — hosted, Arabic-capable, with image annotation. See `OCR_implementation.md`. |
+| **OCR** | [Mistral OCR](https://docs.mistral.ai/studio-api/document-processing/basic_ocr/) — hosted, Arabic-capable, with image annotation |
 | **Embeddings** | [jina-embeddings-v4](https://huggingface.co/jinaai/jina-embeddings-v4) — multilingual, multimodal, long-context |
-| **Vector store** | [Chroma](https://www.trychroma.com/) — one collection per grade (4, 7, 8, 10) |
-| **Reranker** | [jina-reranker-v2-base-multilingual](https://huggingface.co/jinaai/jina-reranker-v2-base-multilingual) — cross-encoder rerank over Chroma top-K |
-| **Generator** | [ALLaM-7B-Instruct-preview](https://huggingface.co/humain-ai/ALLaM-7B-Instruct-preview) — the Saudi national LLM |
-| **UI** | [Chainlit](https://chainlit.io/) with RTL Arabic layout — left sidebar lists past chats; transcripts persist locally in SQLite across browser refreshes |
-| **Orchestration** | [LangGraph](https://langchain-ai.github.io/langgraph/) — `create_react_agent`; `RESPONSE_WORKFLOW.md` preserves the earlier 2-graph design |
+| **Vector store** | [Chroma](https://www.trychroma.com/) — one collection per grade |
+| **Reranker** | [jina-reranker-v2-base-multilingual](https://huggingface.co/jinaai/jina-reranker-v2-base-multilingual) |
+| **Generator** | Pluggable via OpenRouter / Ollama (current default: `gemini-3.1-pro-preview`); any tool-calling model works |
+| **Orchestration** | [LangGraph](https://langchain-ai.github.io/langgraph/) `create_react_agent` |
+| **UI** | [Chainlit](https://chainlit.io/) with RTL Arabic layout; transcripts persist locally in SQLite |
 
 ---
 
-## Pilot Scope
+## Scope
 
-| Stage | Grade |
-| --- | --- |
-| Elementary | Grade 4 |
-| Middle | Grades 7 and 8 |
-| High School | Grade 10 |
+**Loaded today:** Grade 8, 4 textbooks. The architecture is per-grade by design (one Chroma collection per grade), so adding Grades 4, 7, 10 and beyond is an ingestion step, not a redesign.
+**Subjects:** Arabic, Islamic studies, social studies, English, Math (Math pending OCR-quality validation).
+**Out of scope for now:** diagram understanding, equation LaTeX rendering, multi-tenant accounts.
 
-**Subjects:** Arabic, Islamic studies, social studies, English, Math (Math conditional on OCR quality validation).
-
-**Corpus size:** ~15 textbooks, ~3,000–4,500 pages, ~5,000–20,000 chunks after structure-aware chunking.
-
-**Out of scope (for now):** diagram understanding, equation LaTeX rendering, multi-tenant user accounts. Documented as future work.
+**Data:** official MoE textbooks from [ien.edu.sa](https://ien.edu.sa) and [moe.gov.sa](https://moe.gov.sa), used strictly for non-commercial academic research under the MoE's educational-use terms. Bundled with the repo for reproducibility; recipients must not redistribute further.
 
 ---
 
-## Data
+## Getting started
 
-- **Source:** Official Saudi Ministry of Education textbooks from the IEN national educational portal (https://ien.edu.sa) and the MoE website (https://moe.gov.sa).
-- **Author:** Ministry of Education, Kingdom of Saudi Arabia.
-- **License:** Issued by MoE for educational use. This project uses the materials strictly for non-commercial academic research. The raw textbooks and their OCR derivatives are bundled with this repository so the RAG system is fully reproducible end-to-end; recipients must keep them inside the project and not redistribute further.
-- **Languages:** Arabic (majority) and English.
-- **Modalities:** Mix of digital-text PDFs and scanned page images (OCR routed per page).
+The full agent path (agent loop → retrieve → citation parse → topical verifier) is built and tested. The only stub is `retrieve()`'s fallback, which returns 3 canned chunks when a grade's Chroma collection is empty — so you can run the whole pipeline end-to-end with **no API key** (`backend: fake`, the shipped default) or with a real LLM (`backend: openrouter`).
+
+### Prerequisites
+
+- **Docker** (Desktop, or `colima` + `docker-compose`) and **`just`** (`brew install just`) — the primary, supported path. Python and all deps live inside the image.
+- **git**, and ~5 GB free disk (the torch + Jina model caches dominate).
+- *(Optional)* an `OPENROUTER_API_KEY` for real LLM answers — not needed for the default `fake` backend.
+- *(Bare-metal only)* **`uv`** (`brew install uv`) if you skip Docker.
+
+### Setup — Docker (recommended)
+
+```bash
+git clone <repo-url> Aleem && cd Aleem
+cp .env.example .env                 # 1. then set CHAINLIT_AUTH_SECRET (openssl rand -hex 32)
+just build                           # 2. build the image (~3–5 min first time, cached after)
+just init                            # 3. create the per-grade Chroma collections (one-time)
+just up                              # 4. start the UI → http://localhost:8000
+just test                            # 5. (optional) ~65 tests in the container
+```
+
+### Setup — bare-metal with uv (fallback)
+
+```bash
+git clone <repo-url> Aleem && cd Aleem
+uv sync                                                          # install deps into .venv
+cp .env.example .env                                            # set CHAINLIT_AUTH_SECRET
+uv run python -m src.retrieval.init_chroma                      # create collections
+uv run python scripts/smoke_run.py "what is photosynthesis?"    # agent end-to-end, no UI, no key
+just dev                                                        # or: (cd src/ui && PYTHONPATH=../.. uv run chainlit run app.py)
+uv run pytest                                                   # ~4s
+```
+
+To use a real LLM, add `OPENROUTER_API_KEY` to `.env`, set `backend: openrouter` in `config.yaml`, and `just restart`. Full step-by-step — prerequisites, switching backends, persistent chat history, troubleshooting — is in **[`SETUP.md`](SETUP.md)**.
+
+---
+
+## Repository layout
+
+```
+Aleem/
+├── README.md              You are here — the project pitch
+├── SETUP.md               Install + run, from a fresh clone
+├── BUILD_SPEC.md          Locked design decisions (§1–§10)
+├── CLAUDE.md / AGENTS.md  Repo map for coding agents
+├── config.yaml            LLM backend + agent + verifier config
+├── justfile               Task runner (just build / init / up / test …)
+├── Dockerfile             docker-compose.yml — the container build
+├── docs/                  Design docs (WORKFLOW_SANDBOX, RESPONSE_WORKFLOW, OCR) + assets/ screenshots
+├── prompts/               Jinja templates: agent.j2 + verifier.j2
+├── scripts/               smoke_run.py (agent end-to-end, no UI)
+├── src/
+│   ├── retrieval/         Jina-v4 embedder + Chroma client
+│   ├── graph/             Tool-calling agent: agent.py, tools.py, verifier.py, parse.py
+│   ├── ingest/            OCR → chunking → embedding pipeline
+│   └── ui/                Chainlit app (tool-call cards + token stream)
+├── tests/                 pytest suite (fake backend)
+├── chroma/                Persisted per-grade Chroma collections
+└── Data/                  Raw textbook PDFs (gitignored)
+```
 
 ---
 
 ## Evaluation
 
-### Demo-phase smoke set (60 questions)
-
-- 70% authored from end-of-chapter exercises (gold answer + source page).
-- 20% **should-refuse** off-curriculum questions to verify refusal behavior.
-- 10% adversarial bilingual cases.
-
-### Metrics
-
-- **Retrieval:** Recall@5 — did the gold source chunk appear in the top-5 reranked results?
-- **Refusal:** Precision and recall on the should-refuse subset.
-- **Faithfulness:** Manual review of generated answers — do all claims trace to retrieved chunks?
-
-### Benchmark phase (post-demo)
-
-- 150–300-question gold set, published as a HuggingFace dataset.
-- Embedding bake-off (Jina-v4 vs BGE-M3 vs Multilingual-E5 vs Arabic-Triplet-Matryoshka).
-- Generator comparison (ALLaM vs Claude vs Gemini).
-- Full RAGAS suite: faithfulness, answer correctness, context precision.
-
----
-
-## Repository Structure
-
-`✓` = built and working, `⬜` = planned (not yet built).
-
-```
-.
-├── README.md                             ✓
-├── BUILD_SPEC.md                         ✓  Locked design decisions (§1–§10)
-├── SETUP.md                              ✓  Install + run instructions
-├── AGENTS.md (CLAUDE.md → AGENTS.md)     ✓  Navigational map (for Claude Code sessions)
-├── docs/
-│   ├── WORKFLOW_SANDBOX.md               ✓  Current tool-calling agent spec
-│   ├── RESPONSE_WORKFLOW.md              ✓  Historical pipeline decisions (L1–L22)
-│   ├── OCR_implementation.md             ✓  Locked ingest/OCR design
-│   └── Capstone_Proposal_*.md            ✓  Original proposal (historical)
-├── config.yaml                           ✓  Backend-pluggable LLM + agent + verifier config
-├── Data/Books/                           ✓  Raw textbook PDFs (gitignored)
-├── chroma/                               ✓  Persisted Chroma collections per grade
-├── logs/                                 ✓  Daily JSONL query records (gitignored)
-├── prompts/                              ✓  2 Jinja templates: agent.j2 + verifier.j2
-├── scripts/                              ✓  smoke_run.py (programmatic agent end-to-end)
-├── src/
-│   ├── retrieval/                        ✓  Jina-v4 embedder + Chroma client
-│   ├── ui/                               ✓  Chainlit app — tool-call cards + token stream
-│   ├── graph/                            ✓  Tool-calling agent (WORKFLOW_SANDBOX §3)
-│   │   ├── state.py                      ✓  AgentState, Chunk, Citation, ToolCallRecord
-│   │   ├── client.py                     ✓  get_llm (+ for_agent=True) and get_verifier_llm
-│   │   ├── tools.py                      ✓  @tool retrieve(query) + per-request contextvars
-│   │   ├── agent.py                      ✓  create_react_agent + run_agent + finalize
-│   │   ├── verifier.py                   ✓  VerifierDecision + verify_topical
-│   │   ├── parse.py                      ✓  [n] parse + structural flags
-│   │   ├── prompts.py                    ✓  Jinja loader (render / render_pair)
-│   │   └── logging.py                    ✓  @timed + log_query (JSONL)
-│   └── ingest/                           ✓  OCR + chunking pipeline (collaborator-owned)
-└── tests/                                ✓  pytest suite (65 tests, fake backend)
-```
-
-> **What's actually stubbed?** Only `src/graph/tools.py`'s
-> `_STUB_CHUNKS` fallback — it returns 3 hardcoded chunks when the
-> grade's Chroma collection is empty (the test default). Everything
-> else along the agent path is built.
-
----
-
-## Getting Started
-
-> **Status:** The tool-calling agent path (agent loop → retrieve →
-> citation parse → topical verifier) is built and tested. The only stub
-> left is `retrieve()`'s fallback — it returns 3 hardcoded chunks when
-> the per-grade Chroma collection is empty. So you can run the entire
-> pipeline end-to-end today with **no API key** (`backend: fake`, the
-> shipped default in `config.yaml`) or with a real LLM (`backend:
-> openrouter`, ~$0.001 per query).
-
-### Prerequisites
-
-- Python 3.11 (`uv` will install it for you).
-- `uv` package manager — `brew install uv` or the one-line installer.
-- (Optional) `OPENROUTER_API_KEY` for real LLM answers. Without it the
-  pipeline still runs end-to-end with canned replies.
-- (Optional, later) Cloud GPU for the production ALLaM-7B deployment.
-
-### Quick start
-
-**With Docker** (one image, same in dev and deploy):
-
-```bash
-git clone <repo-url> Aleem && cd Aleem
-cp .env.example .env                                       # fill CHAINLIT_AUTH_SECRET
-just build && just up                                      # browser UI at :8000
-just test                                                  # 65 tests in container
-```
-
-**With uv directly** (bare-metal, no container):
-
-```bash
-git clone <repo-url> Aleem && cd Aleem
-uv sync                                                    # install deps
-cp .env.example .env                                       # optional keys
-uv run python -m src.retrieval.init_chroma                 # create collections
-uv run python scripts/smoke_run.py "what is photosynthesis?"   # no UI, no API key
-(cd src/ui && PYTHONPATH=../.. uv run chainlit run app.py)     # browser UI at :8000
-uv run pytest                                              # 65 tests, ~4s
-```
-
-Full step-by-step in [`SETUP.md`](SETUP.md) — including Docker prereqs,
-how to switch backends, troubleshoot rate limits, and tail the JSONL
-query log.
+- **Demo smoke set (60 questions):** 70% authored from end-of-chapter exercises (gold answer + source page), 20% should-refuse off-curriculum questions, 10% adversarial bilingual cases.
+- **Metrics:** retrieval Recall@5, refusal precision/recall, manual faithfulness review.
+- **Benchmark phase (post-demo):** publish a 150–300-question gold set as a HuggingFace dataset; run an embedding and generator bake-off plus the full RAGAS suite.
 
 ---
 
 ## Roadmap
 
-- [ ] **Phase 1 — Demo (2 weeks):** end-to-end working Chainlit app over Grades 4 / 7 / 10, 5 subjects, with grade-isolated retrieval, lesson-level citations, and refusal handling.
-- [ ] **Phase 2 — Benchmark:** publish the 150–300-question Saudi-curriculum eval set as a HuggingFace dataset; run an embedding and generator bake-off.
-- [ ] **Phase 3 — Multimodal:** use Jina-v4 image embeddings to retrieve textbook diagrams; route math equations through a LaTeX-aware OCR fallback.
-- [ ] **Phase 4 — Pilot:** classroom user testing with a Saudi school.
+- [x] **Phase 0 — Grade 8:** end-to-end Chainlit app over Grade 8 (4 textbooks) with grade-isolated retrieval, lesson-level citations, and refusal.
+- [ ] **Phase 1 — More grades:** ingest Grades 4, 7, 10 and additional subjects.
+- [ ] **Phase 2 — Benchmark:** publish the eval set; run embedding + generator bake-offs.
+- [ ] **Phase 3 — Multimodal:** retrieve textbook diagrams via Jina-v4 image embeddings; LaTeX-aware math OCR.
+- [ ] **Phase 4 — Pilot:** classroom testing with a Saudi school.
 
 ---
 
-## Team
+## License & use
 
-Capstone project for the **Applied AI Bootcamp**. Built by a team of 2.
-
----
-
-## License & Use
-
-- **Code:** to be decided (likely MIT or Apache 2.0).
-- **Textbook content:** Ministry of Education, Kingdom of Saudi Arabia. Used here strictly for non-commercial academic research under the MoE's educational-use terms. Bundled with this repository for reproducibility; recipients must not redistribute further.
-- Any deployment beyond this capstone requires explicit permission from the Ministry of Education.
-
----
+- **Code:** TBD (likely MIT or Apache 2.0).
+- **Textbook content:** © Ministry of Education, Kingdom of Saudi Arabia. Used strictly for non-commercial academic research under the MoE's educational-use terms; not for redistribution. Any deployment beyond this capstone requires explicit MoE permission.
 
 ## Acknowledgments
 
-- Ministry of Education, Kingdom of Saudi Arabia — official textbook source.
-- [Mistral AI](https://mistral.ai/) for the hosted OCR API powering the ingestion pipeline.
-- [HUMAIN](https://huggingface.co/humain-ai) / [SDAIA](https://sdaia.gov.sa/) for ALLaM, the Saudi national LLM.
-- [Jina AI](https://jina.ai/) for the embedding and reranker models.
-- The Applied AI Bootcamp instructors and cohort.
+Ministry of Education (textbook source) · [Mistral AI](https://mistral.ai/) (OCR) · [Jina AI](https://jina.ai/) (embeddings + reranker) · the Applied AI Bootcamp. Capstone project, built by a team of 2.
