@@ -207,8 +207,8 @@ def retrieve(query: str) -> str:
 
     Construct a query that works for semantic search: use topic terms, not
     the student's exact phrasing. Resolve pronouns and references from
-    chat history first. Try Arabic↔English terms if the first attempt
-    returns low relevance scores.
+    chat history first. Phrase the query in the textbook's own language
+    (stated in the system prompt) so it matches the embedded chunks.
 
     Returns a numbered list of chunks formatted as
     `[n] (relevance: 0.94) <chunk text>`. Use the numbers as inline `[n]`

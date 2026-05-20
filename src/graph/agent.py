@@ -62,11 +62,23 @@ log = logging.getLogger("aleem.graph.agent")
 # ---------------------------------------------------------------------------
 
 
+# Subjects whose textbooks are written in English. Everything else
+# (islamic_studies, social_studies, digital_skills, arabic, math, …) is an
+# Arabic-language textbook, so retrieve() queries must be Arabic to match the
+# embedded chunk language regardless of what language the student asks in.
+_ENGLISH_SUBJECTS = frozenset({"english"})
+
+
+def book_language(subject: str) -> str:
+    return "English" if subject in _ENGLISH_SUBJECTS else "Arabic"
+
+
 def _system_prompt(grade: int, subject: str) -> str:
     return render(
         "agent.j2",
         grade=grade,
         subject=subject,
+        book_language=book_language(subject),
         max_tool_calls=settings.agent.max_tool_calls,
     )
 
