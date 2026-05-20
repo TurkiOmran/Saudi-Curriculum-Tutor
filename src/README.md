@@ -7,9 +7,9 @@ so each module has a single, narrow responsibility.
 
 | Folder         | Purpose                                                              | Status |
 | -------------- | -------------------------------------------------------------------- | ------ |
-| `retrieval/`   | Chroma client, Jina-v4 embedding function, collection setup script   | ✅ scaffolded |
-| `ui/`          | Chainlit app — grade picker, subject picker, message handlers        | ✅ scaffolded (stub handler) |
-| `ingest/`      | OCR (Mistral) + chunking pipeline → adds documents to Chroma         | ✅ scaffolded |
+| `retrieval/`   | Chroma client, Jina-v4 embedding function, Jina reranker, collection setup, model prewarm | ✅ |
+| `ui/`          | Chainlit app — grade picker, subject picker, persistent history, tool-call cards | ✅ |
+| `ingest/`      | OCR (Mistral) + chunking pipeline → adds documents to Chroma         | ✅ |
 | `graph/`       | Tool-calling agent + verifier + citation parse (`docs/WORKFLOW_SANDBOX.md` §3). Replaces the old rewrite→decompose→intent→retrieve→self_check→generate pipeline. | ✅ |
 
 > All query-path code lives in `graph/` per `RESPONSE_WORKFLOW.md` L10.
@@ -33,10 +33,10 @@ uv sync
 # 2. Create the empty Chroma collections.
 uv run python -m src.retrieval.init_chroma
 
-# 3. Launch the Chainlit UI shell (no real retrieval wired in yet).
+# 3. Launch the Chainlit UI — drives the tool-calling agent end-to-end.
 #    Chainlit reads its config/markdown/public assets from the CWD, so
-#    we run it from inside src/ui/. PYTHONPATH lets future imports of
-#    `src.retrieval...` resolve once the pipeline is wired in.
+#    we run it from inside src/ui/. PYTHONPATH lets `from src...` imports
+#    resolve from the repo root.
 (cd src/ui && PYTHONPATH=../.. uv run chainlit run app.py)
 ```
 

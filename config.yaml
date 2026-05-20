@@ -8,11 +8,12 @@ llm:
   # - "fake" returns canned strings — lets the graph run end-to-end with no
   #   API key (Phase A milestone per L10). Switch to "openrouter" once you
   #   have OPENROUTER_API_KEY in .env.
-  backend: fake
+  backend: openrouter
 
   openrouter:
-    # NOTE: model MUST support function/tool calling for structured outputs
-    # (L13 intent classifier, L16 rewrite+language). Verify currency at
+    # NOTE: model MUST support function/tool calling — the agent binds the
+    # `retrieve` tool via `bind_tools`, and the verifier uses
+    # `with_structured_output`. Verify currency at
     # https://openrouter.ai/api/v1/models — the free roster rotates.
     # Other free tool-capable picks as of 2026-05:
     #   qwen/qwen3-next-80b-a3b-instruct:free   (best Arabic of free tier)
@@ -28,23 +29,18 @@ llm:
     model: llama3.1:8b
     base_url: http://localhost:11434
 
-  classifier_temperature: 0.0   # intent, self-check, decompose, rewrite
-  generation_temperature: 0.6   # final answer
+  classifier_temperature: 0.0   # verifier (structured output, deterministic)
+  generation_temperature: 0.6   # agent / final answer
   max_tokens: 1024
   timeout_seconds: 30
 
-# Cuttable nodes (BUILD_SPEC §8 Risk #4)
-features:
-  history_rewrite_enabled: true   # L7 — regex fallback for language if false
-  decomposition_enabled: true     # L4 — force [query] if false (no LLM call)
-
-# Retrieval (Turki's retrieve() per L2 + collaborator's reranker seam)
+# Retrieval (docs/WORKFLOW_SANDBOX.md §6 — Chunk contract preserved from L2)
 retrieval:
   top_k_retrieve: 20
   top_k_rerank: 5
-  reranker_model: jinaai/jina-reranker-v2-base-multilingual  # spec §9 — v2/v3 TBC
+  reranker_model: jinaai/jina-reranker-v2-base-multilingual
 
-# History window for L7 rewrite node
+# History window: caps how many prior turns the UI replays into the agent.
 memory:
   max_turns: 4
 
